@@ -2,6 +2,10 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+enum ResizeCorner {
+    case topLeft, topRight, bottomLeft, bottomRight
+}
+
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var layer: AnnotationLayer
@@ -13,9 +17,13 @@ final class EditorViewModel: ObservableObject {
     @Published var draftRect: CGRect?
     @Published var dragStart: CGPoint?
 
+    @Published var editingTextID: UUID?
+
     private(set) var capture: Capture
     private var undoStack: [AnnotationLayer] = []
     private var redoStack: [AnnotationLayer] = []
+    private var resizeAnchor: CGRect?
+    private var moveAnchor: CGRect?
 
     init(capture: Capture) {
         self.capture = capture
@@ -65,12 +73,22 @@ final class EditorViewModel: ObservableObject {
 
     func commitDraft() {
         defer { dragStart = nil; draftRect = nil }
-        guard let r = draftRect, r.width > 3 || r.height > 3 else { return }
+        guard var r = draftRect else { return }
+        if tool == .text {
+            if r.width < 20 { r.size.width = 160 }
+            if r.height < 20 { r.size.height = 30 }
+        } else {
+            guard r.width > 3 || r.height > 3 else { return }
+        }
         snapshot()
         let kind: AnnotationTool = (tool == .select) ? .rectangle : tool
-        let ann = Annotation(kind: kind, rect: r, color: color, stroke: stroke)
+        let ann = Annotation(kind: kind, rect: r, color: color, stroke: stroke,
+                             text: tool == .text ? "" : nil)
         layer.annotations.append(ann)
         selectedID = ann.id
+        if tool == .text {
+            editingTextID = ann.id
+        }
         persist()
     }
 
@@ -90,6 +108,96 @@ final class EditorViewModel: ObservableObject {
     }
 
     func select(_ id: UUID?) { selectedID = id }
+
+    func resize(annotationID: UUID, corner: ResizeCorner, to imagePoint: CGPoint) {
+        guard let idx = layer.annotations.firstIndex(where: { $0.id == annotationID }) else { return }
+        if resizeAnchor == nil {
+            snapshot()
+            resizeAnchor = layer.annotations[idx].rect
+        }
+        guard let anchor = resizeAnchor else { return }
+
+        var newRect: CGRect
+        switch corner {
+        case .topLeft:
+            newRect = CGRect(x: imagePoint.x, y: imagePoint.y,
+                             width: anchor.maxX - imagePoint.x,
+                             height: anchor.maxY - imagePoint.y)
+        case .topRight:
+            newRect = CGRect(x: anchor.minX, y: imagePoint.y,
+                             width: imagePoint.x - anchor.minX,
+                             height: anchor.maxY - imagePoint.y)
+        case .bottomLeft:
+            newRect = CGRect(x: imagePoint.x, y: anchor.minY,
+                             width: anchor.maxX - imagePoint.x,
+                             height: imagePoint.y - anchor.minY)
+        case .bottomRight:
+            newRect = CGRect(x: anchor.minX, y: anchor.minY,
+                             width: imagePoint.x - anchor.minX,
+                             height: imagePoint.y - anchor.minY)
+        }
+        if newRect.width < 0 {
+            newRect.origin.x += newRect.width
+            newRect.size.width = -newRect.width
+        }
+        if newRect.height < 0 {
+            newRect.origin.y += newRect.height
+            newRect.size.height = -newRect.height
+        }
+        layer.annotations[idx].rect = newRect
+    }
+
+    func endResize() {
+        guard resizeAnchor != nil else { return }
+        resizeAnchor = nil
+        persist()
+    }
+
+    func move(annotationID: UUID, by translation: CGSize) {
+        guard let idx = layer.annotations.firstIndex(where: { $0.id == annotationID }) else { return }
+        if moveAnchor == nil {
+            snapshot()
+            moveAnchor = layer.annotations[idx].rect
+            if selectedID != annotationID { selectedID = annotationID }
+        }
+        guard let anchor = moveAnchor else { return }
+        layer.annotations[idx].rect = CGRect(
+            x: anchor.minX + translation.width,
+            y: anchor.minY + translation.height,
+            width: anchor.width,
+            height: anchor.height
+        )
+    }
+
+    func endMove() {
+        guard moveAnchor != nil else { return }
+        moveAnchor = nil
+        persist()
+    }
+
+    func startEditingText(_ id: UUID) {
+        editingTextID = id
+        selectedID = id
+    }
+
+    func updateAnnotationText(_ id: UUID, text: String) {
+        guard let idx = layer.annotations.firstIndex(where: { $0.id == id }) else { return }
+        let newText = text.trimmingCharacters(in: .whitespaces)
+        if newText.isEmpty {
+            snapshot()
+            layer.annotations.remove(at: idx)
+            if selectedID == id { selectedID = nil }
+            persist()
+        } else if layer.annotations[idx].text != newText {
+            snapshot()
+            layer.annotations[idx].text = newText
+            persist()
+        }
+    }
+
+    func finishEditingText() {
+        editingTextID = nil
+    }
 
     private func persist() {
         LibraryStore.shared.saveAnnotations(layer, for: capture)
@@ -261,9 +369,11 @@ struct EditorView: View {
             Button { vm.undo() } label: { Image(systemName: "arrow.uturn.backward") }
                 .help("Undo (⌘Z)")
                 .buttonStyle(.bordered)
+                .keyboardShortcut("z", modifiers: .command)
             Button { vm.redo() } label: { Image(systemName: "arrow.uturn.forward") }
                 .help("Redo (⇧⌘Z)")
                 .buttonStyle(.bordered)
+                .keyboardShortcut("z", modifiers: [.command, .shift])
             Button("Copy") { vm.copyToPasteboard() }
                 .keyboardShortcut("c", modifiers: .command)
             Button("Save") { vm.saveAs() }
@@ -318,6 +428,7 @@ struct EditorView: View {
     private func drawingGesture(imageSize: CGSize, displaySize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard vm.tool != .select else { return }
                 let scaled = scaleToImage(point: value.location,
                                           imageSize: imageSize, displaySize: displaySize)
                 if vm.dragStart == nil {
@@ -327,6 +438,7 @@ struct EditorView: View {
                 vm.updateDraft(to: scaled)
             }
             .onEnded { _ in
+                guard vm.tool != .select else { return }
                 vm.commitDraft()
             }
     }
@@ -362,33 +474,65 @@ private struct AnnotationsOverlay: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(vm.layer.annotations) { ann in
-                let displayRect = scaledToDisplay(rect: ann.rect)
-                ZStack(alignment: .topLeading) {
-                    annotationShape(kind: ann.kind, rect: displayRect)
-                        .stroke(ann.color.color,
-                                style: StrokeStyle(lineWidth: ann.stroke * scale, lineCap: .round))
-                    if ann.kind == .highlight {
-                        annotationShape(kind: ann.kind, rect: displayRect)
-                            .fill(ann.color.color.opacity(0.3))
-                    }
-                    if ann.kind == .text {
-                        Text(ann.text ?? "Text")
-                            .font(.system(size: 18 * scale, weight: .semibold))
-                            .foregroundStyle(ann.color.color)
-                            .position(x: displayRect.midX, y: displayRect.midY)
-                    }
-                    if vm.selectedID == ann.id {
-                        selectionHandles(in: displayRect)
-                    }
-                }
-                .contentShape(Rectangle().path(in: displayRect.insetBy(dx: -8, dy: -8)))
-                .onTapGesture { vm.select(ann.id) }
+                annotationView(for: ann)
             }
 
             if let draft = vm.draftRect {
                 draftShape(rect: scaledToDisplay(rect: draft))
             }
         }
+        .coordinateSpace(name: "canvas")
+    }
+
+    @ViewBuilder
+    private func annotationView(for ann: Annotation) -> some View {
+        let displayRect = scaledToDisplay(rect: ann.rect)
+        let body = ZStack(alignment: .topLeading) {
+            annotationShape(kind: ann.kind, rect: displayRect)
+                .stroke(ann.color.color,
+                        style: StrokeStyle(lineWidth: ann.stroke * scale, lineCap: .round))
+            if ann.kind == .highlight {
+                annotationShape(kind: ann.kind, rect: displayRect)
+                    .fill(ann.color.color.opacity(0.3))
+            }
+            if ann.kind == .text {
+                if vm.editingTextID == ann.id {
+                    TextAnnotationEditor(vm: vm, ann: ann,
+                                         displayRect: displayRect, scale: scale)
+                } else {
+                    Text(ann.text?.isEmpty == false ? ann.text! : "Text")
+                        .font(.system(size: 18 * scale, weight: .semibold))
+                        .foregroundStyle(ann.color.color)
+                        .frame(width: displayRect.width, height: displayRect.height,
+                               alignment: .topLeading)
+                        .position(x: displayRect.midX, y: displayRect.midY)
+                        .onTapGesture(count: 2) { vm.startEditingText(ann.id) }
+                }
+            }
+            if vm.selectedID == ann.id && vm.editingTextID != ann.id {
+                selectionHandles(for: ann, displayRect: displayRect)
+            }
+        }
+        .contentShape(Rectangle().path(in: displayRect.insetBy(dx: -8, dy: -8)))
+        .onTapGesture { vm.select(ann.id) }
+
+        if vm.tool == .select && vm.editingTextID != ann.id {
+            body.gesture(moveGesture(for: ann))
+        } else {
+            body
+        }
+    }
+
+    private func moveGesture(for ann: Annotation) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named("canvas"))
+            .onChanged { value in
+                let dx = value.translation.width * (imageSize.width / displaySize.width)
+                let dy = value.translation.height * (imageSize.height / displaySize.height)
+                vm.move(annotationID: ann.id, by: CGSize(width: dx, height: dy))
+            }
+            .onEnded { _ in
+                vm.endMove()
+            }
     }
 
     private var scale: CGFloat {
@@ -432,21 +576,83 @@ private struct AnnotationsOverlay: View {
             .stroke(vm.color.color.opacity(0.85), style: stroke)
     }
 
-    private func selectionHandles(in rect: CGRect) -> some View {
-        let points: [CGPoint] = [
-            CGPoint(x: rect.minX, y: rect.minY),
-            CGPoint(x: rect.maxX, y: rect.minY),
-            CGPoint(x: rect.minX, y: rect.maxY),
-            CGPoint(x: rect.maxX, y: rect.maxY)
+    private func selectionHandles(for ann: Annotation, displayRect: CGRect) -> some View {
+        let handles: [(CGPoint, ResizeCorner)] = [
+            (CGPoint(x: displayRect.minX, y: displayRect.minY), .topLeft),
+            (CGPoint(x: displayRect.maxX, y: displayRect.minY), .topRight),
+            (CGPoint(x: displayRect.minX, y: displayRect.maxY), .bottomLeft),
+            (CGPoint(x: displayRect.maxX, y: displayRect.maxY), .bottomRight)
         ]
         return ZStack {
-            ForEach(0..<points.count, id: \.self) { i in
+            ForEach(handles.indices, id: \.self) { i in
+                let (pos, corner) = handles[i]
                 Circle()
                     .fill(Color.white)
-                    .frame(width: 10, height: 10)
+                    .frame(width: 12, height: 12)
                     .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2))
-                    .position(points[i])
+                    .contentShape(Circle().scale(1.8))
+                    .position(pos)
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .named("canvas"))
+                            .onChanged { value in
+                                let p = scaleToImagePoint(value.location)
+                                vm.resize(annotationID: ann.id, corner: corner, to: p)
+                            }
+                            .onEnded { _ in
+                                vm.endResize()
+                            }
+                    )
             }
         }
+    }
+
+    private func scaleToImagePoint(_ p: CGPoint) -> CGPoint {
+        let sx = imageSize.width / displaySize.width
+        let sy = imageSize.height / displaySize.height
+        return CGPoint(x: p.x * sx, y: p.y * sy)
+    }
+}
+
+private struct TextAnnotationEditor: View {
+    @ObservedObject var vm: EditorViewModel
+    let ann: Annotation
+    let displayRect: CGRect
+    let scale: CGFloat
+
+    @State private var draft: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Type…", text: $draft)
+            .textFieldStyle(.plain)
+            .font(.system(size: 18 * scale, weight: .semibold))
+            .foregroundStyle(ann.color.color)
+            .focused($focused)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.black.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(ann.color.color.opacity(0.55), lineWidth: 1)
+                    )
+            )
+            .frame(width: max(120, displayRect.width),
+                   height: max(28, displayRect.height))
+            .position(x: displayRect.midX, y: displayRect.midY)
+            .onAppear {
+                draft = ann.text ?? ""
+                DispatchQueue.main.async { focused = true }
+            }
+            .onSubmit { commit() }
+            .onExitCommand { commit() }
+            .onChange(of: focused) { _, isFocused in
+                if !isFocused { commit() }
+            }
+    }
+
+    private func commit() {
+        vm.updateAnnotationText(ann.id, text: draft)
+        vm.finishEditingText()
     }
 }
