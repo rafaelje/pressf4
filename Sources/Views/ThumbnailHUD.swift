@@ -119,11 +119,17 @@ final class ThumbnailHUDController: ObservableObject {
         }
     }
 
+    @MainActor
     static func copyToPasteboard(capture: Capture) {
-        guard let image = LibraryStore.shared.loadImage(for: capture) else { return }
+        guard let image = EditorViewModel.renderFlattened(for: capture),
+              let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.writeObjects([image])
+        pb.setData(tiff, forType: .tiff)
+        if let png = rep.representation(using: .png, properties: [:]) {
+            pb.setData(png, forType: .png)
+        }
     }
 }
 

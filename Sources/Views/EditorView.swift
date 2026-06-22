@@ -299,38 +299,30 @@ final class EditorViewModel: ObservableObject {
     }
 
     func render() -> NSImage? {
-        guard let base = LibraryStore.shared.loadImage(for: capture) else { return nil }
-        let size = base.size
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
-                                    pixelsWide: Int(size.width),
-                                    pixelsHigh: Int(size.height),
-                                    bitsPerSample: 8,
-                                    samplesPerPixel: 4,
-                                    hasAlpha: true,
-                                    isPlanar: false,
-                                    colorSpaceName: .deviceRGB,
-                                    bytesPerRow: 0,
-                                    bitsPerPixel: 32)
-        guard let rep else { return nil }
-        rep.size = size
-
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        base.draw(in: NSRect(origin: .zero, size: size))
-
-        if let ctx = NSGraphicsContext.current?.cgContext {
-            for a in layer.annotations {
-                drawAnnotation(a, in: ctx, canvasSize: size)
-            }
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
-        let out = NSImage(size: size)
-        out.addRepresentation(rep)
-        return out
+        Self.render(base: LibraryStore.shared.loadImage(for: capture),
+                    annotations: layer.annotations)
     }
 
-    private func drawAnnotation(_ a: Annotation, in ctx: CGContext, canvasSize: CGSize) {
+    static func renderFlattened(for capture: Capture) -> NSImage? {
+        let base = LibraryStore.shared.loadImage(for: capture)
+        let annotations = LibraryStore.shared.loadAnnotations(for: capture).annotations
+        return render(base: base, annotations: annotations)
+    }
+
+    private static func render(base: NSImage?, annotations: [Annotation]) -> NSImage? {
+        guard let base else { return nil }
+        let size = base.size
+        return NSImage(size: size, flipped: true) { _ in
+            base.draw(in: NSRect(origin: .zero, size: size))
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return true }
+            for a in annotations {
+                drawAnnotation(a, in: ctx)
+            }
+            return true
+        }
+    }
+
+    private static func drawAnnotation(_ a: Annotation, in ctx: CGContext) {
         ctx.saveGState()
         ctx.setStrokeColor(a.color.cgColor)
         ctx.setLineWidth(a.stroke)
@@ -365,7 +357,7 @@ final class EditorViewModel: ObservableObject {
         ctx.restoreGState()
     }
 
-    private func drawArrow(from a: CGPoint, to b: CGPoint, lineWidth: CGFloat, in ctx: CGContext) {
+    private static func drawArrow(from a: CGPoint, to b: CGPoint, lineWidth: CGFloat, in ctx: CGContext) {
         ctx.move(to: a)
         ctx.addLine(to: b)
         ctx.strokePath()
@@ -381,10 +373,15 @@ final class EditorViewModel: ObservableObject {
     }
 
     func copyToPasteboard() {
-        guard let img = render() else { return }
+        guard let img = render(),
+              let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.writeObjects([img])
+        pb.setData(tiff, forType: .tiff)
+        if let png = rep.representation(using: .png, properties: [:]) {
+            pb.setData(png, forType: .png)
+        }
     }
 
     func saveAs() {
