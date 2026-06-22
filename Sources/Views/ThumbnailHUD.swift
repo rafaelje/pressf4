@@ -6,13 +6,12 @@ final class ThumbnailHUDController {
     static let shared = ThumbnailHUDController()
 
     private var window: NSWindow?
-    private var dismissWork: DispatchWorkItem?
 
     func present(capture: Capture, onOpen: @escaping () -> Void) {
         dismiss()
 
         guard let screen = NSScreen.main else { return }
-        let size = NSSize(width: 220, height: 160)
+        let size = NSSize(width: 252, height: 208)
         let margin: CGFloat = 22
         let originX = screen.visibleFrame.maxX - size.width - margin
         let originY = screen.visibleFrame.minY + margin
@@ -24,7 +23,7 @@ final class ThumbnailHUDController {
                         defer: false)
         w.isOpaque = false
         w.backgroundColor = .clear
-        w.hasShadow = true
+        w.hasShadow = false
         w.level = .floating
         w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         w.isFloatingPanel = true
@@ -38,6 +37,9 @@ final class ThumbnailHUDController {
                                     onCopy: { [weak self] in
                                         Self.copyToPasteboard(capture: capture)
                                         self?.dismiss()
+                                    },
+                                    onClose: { [weak self] in
+                                        self?.dismiss()
                                     })
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: size)
@@ -46,16 +48,15 @@ final class ThumbnailHUDController {
         w.alphaValue = 0
         w.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.18
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             w.animator().alphaValue = 1.0
         }
 
         window = w
-        scheduleDismiss(after: 8.0)
     }
 
     func dismiss() {
-        dismissWork?.cancel()
         guard let w = window else { return }
         window = nil
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -64,23 +65,6 @@ final class ThumbnailHUDController {
         }, completionHandler: {
             w.orderOut(nil)
         })
-    }
-
-    func pauseDismiss() {
-        dismissWork?.cancel()
-        dismissWork = nil
-    }
-
-    func resumeDismiss(after seconds: Double = 2.5) {
-        guard window != nil else { return }
-        scheduleDismiss(after: seconds)
-    }
-
-    private func scheduleDismiss(after seconds: Double) {
-        dismissWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.dismiss() }
-        dismissWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
     static func copyToPasteboard(capture: Capture) {
@@ -95,85 +79,119 @@ private struct ThumbnailHUDView: View {
     let capture: Capture
     let onOpen: () -> Void
     let onCopy: () -> Void
+    let onClose: () -> Void
 
     @State private var hover = false
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 10) {
             preview
-                .frame(maxWidth: .infinity)
-                .aspectRatio(16/10, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .onTapGesture(perform: onOpen)
-                .onDrag {
-                    ThumbnailHUDController.shared.pauseDismiss()
-                    let url = LibraryStore.shared.imageURL(for: capture)
-                    return NSItemProvider(contentsOf: url) ?? NSItemProvider()
-                }
-
-            HStack(spacing: 6) {
-                Text("\(capture.displayDims) · PNG")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.75))
-                Spacer()
-                Button(action: onOpen) {
-                    Image(systemName: "pencil")
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(HUDButtonStyle())
-                .help("Edit")
-
-                Button(action: onCopy) {
-                    Image(systemName: "doc.on.doc")
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(HUDButtonStyle())
-                .help("Copy")
-            }
-            .padding(.horizontal, 4)
+            actionBar
         }
-        .padding(8)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
                 )
+                .shadow(color: .black.opacity(0.40), radius: 22, x: 0, y: 10)
         )
-        .onHover { isHover in
-            hover = isHover
-            if isHover {
-                ThumbnailHUDController.shared.pauseDismiss()
-            } else {
-                ThumbnailHUDController.shared.resumeDismiss()
-            }
-        }
+        .onHover { hover = $0 }
     }
 
     private var preview: some View {
-        Group {
-            if let image = LibraryStore.shared.loadImage(for: capture) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Color.gray
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = LibraryStore.shared.loadImage(for: capture) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.2)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
             }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(16/10, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+            )
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+            .onDrag {
+                let url = LibraryStore.shared.imageURL(for: capture)
+                return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+            }
+
+            CloseButton(action: onClose)
+                .padding(6)
+                .opacity(hover ? 1.0 : 0.55)
+                .animation(.easeInOut(duration: 0.15), value: hover)
         }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 6) {
+            Text(capture.displayDims)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.65))
+                .padding(.leading, 4)
+
+            Spacer()
+
+            HUDIconButton(icon: "pencil", help: "Edit", action: onOpen)
+            HUDIconButton(icon: "doc.on.doc", help: "Copy", action: onCopy)
+        }
+        .padding(.horizontal, 2)
     }
 }
 
-private struct HUDButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.white)
-            .font(.system(size: 11))
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(configuration.isPressed
-                          ? Color.white.opacity(0.2)
-                          : Color.white.opacity(0.08))
-            )
+private struct CloseButton: View {
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(
+                    Circle().fill(Color.black.opacity(hover ? 0.85 : 0.55))
+                )
+                .overlay(
+                    Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Close")
+        .onHover { hover = $0 }
+    }
+}
+
+private struct HUDIconButton: View {
+    let icon: String
+    let help: String
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.95))
+                .frame(width: 28, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(hover ? 0.22 : 0.10))
+                )
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { hover = $0 }
     }
 }
