@@ -16,6 +16,8 @@ final class EditorViewModel: ObservableObject {
 
     @Published var draftRect: CGRect?
     @Published var dragStart: CGPoint?
+    @Published var draftEnd: CGPoint?
+    @Published var draftPoints: [CGPoint] = []
 
     @Published var editingTextID: UUID?
 
@@ -23,7 +25,13 @@ final class EditorViewModel: ObservableObject {
     private var undoStack: [AnnotationLayer] = []
     private var redoStack: [AnnotationLayer] = []
     private var resizeAnchor: CGRect?
+    private var resizeAnchorArrowStart: CGPoint?
+    private var resizeAnchorArrowEnd: CGPoint?
+    private var resizeAnchorPoints: [CGPoint]?
     private var moveAnchor: CGRect?
+    private var moveAnchorArrowStart: CGPoint?
+    private var moveAnchorArrowEnd: CGPoint?
+    private var moveAnchorPoints: [CGPoint]?
 
     init(capture: Capture) {
         self.capture = capture
@@ -60,36 +68,67 @@ final class EditorViewModel: ObservableObject {
 
     func startDraft(at point: CGPoint) {
         dragStart = point
+        draftEnd = point
         draftRect = CGRect(origin: point, size: .zero)
+        draftPoints = (tool == .freehand) ? [point] : []
     }
 
     func updateDraft(to point: CGPoint) {
         guard let s = dragStart else { return }
-        draftRect = CGRect(x: min(s.x, point.x),
-                           y: min(s.y, point.y),
-                           width: abs(point.x - s.x),
-                           height: abs(point.y - s.y))
+        draftEnd = point
+        if tool == .freehand {
+            if let last = draftPoints.last {
+                if hypot(point.x - last.x, point.y - last.y) >= 1.0 {
+                    draftPoints.append(point)
+                }
+            } else {
+                draftPoints.append(point)
+            }
+            draftRect = boundingRect(of: draftPoints)
+        } else {
+            draftRect = CGRect(x: min(s.x, point.x),
+                               y: min(s.y, point.y),
+                               width: abs(point.x - s.x),
+                               height: abs(point.y - s.y))
+        }
     }
 
     func commitDraft() {
-        defer { dragStart = nil; draftRect = nil }
-        guard var r = draftRect else { return }
+        defer { dragStart = nil; draftRect = nil; draftEnd = nil; draftPoints = [] }
+        guard var r = draftRect, let s = dragStart, let e = draftEnd else { return }
         if tool == .text {
             if r.width < 20 { r.size.width = 160 }
             if r.height < 20 { r.size.height = 30 }
+        } else if tool == .freehand {
+            guard draftPoints.count > 1 else { return }
         } else {
             guard r.width > 3 || r.height > 3 else { return }
         }
         snapshot()
         let kind: AnnotationTool = (tool == .select) ? .rectangle : tool
         let ann = Annotation(kind: kind, rect: r, color: color, stroke: stroke,
-                             text: tool == .text ? "" : nil)
+                             text: tool == .text ? "" : nil,
+                             arrowStart: tool == .arrow ? s : nil,
+                             arrowEnd: tool == .arrow ? e : nil,
+                             points: tool == .freehand ? draftPoints : nil)
         layer.annotations.append(ann)
         selectedID = ann.id
         if tool == .text {
             editingTextID = ann.id
         }
         persist()
+    }
+
+    private func boundingRect(of points: [CGPoint]) -> CGRect {
+        guard let first = points.first else { return .zero }
+        var minX = first.x, minY = first.y, maxX = first.x, maxY = first.y
+        for p in points.dropFirst() {
+            if p.x < minX { minX = p.x }
+            if p.y < minY { minY = p.y }
+            if p.x > maxX { maxX = p.x }
+            if p.y > maxY { maxY = p.y }
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     func deleteSelected() {
@@ -114,6 +153,9 @@ final class EditorViewModel: ObservableObject {
         if resizeAnchor == nil {
             snapshot()
             resizeAnchor = layer.annotations[idx].rect
+            resizeAnchorArrowStart = layer.annotations[idx].arrowStart
+            resizeAnchorArrowEnd = layer.annotations[idx].arrowEnd
+            resizeAnchorPoints = layer.annotations[idx].points
         }
         guard let anchor = resizeAnchor else { return }
 
@@ -145,11 +187,35 @@ final class EditorViewModel: ObservableObject {
             newRect.size.height = -newRect.height
         }
         layer.annotations[idx].rect = newRect
+
+        if anchor.width > 0, anchor.height > 0 {
+            let sx = newRect.width / anchor.width
+            let sy = newRect.height / anchor.height
+            if let aS = resizeAnchorArrowStart {
+                layer.annotations[idx].arrowStart = CGPoint(
+                    x: newRect.minX + (aS.x - anchor.minX) * sx,
+                    y: newRect.minY + (aS.y - anchor.minY) * sy)
+            }
+            if let aE = resizeAnchorArrowEnd {
+                layer.annotations[idx].arrowEnd = CGPoint(
+                    x: newRect.minX + (aE.x - anchor.minX) * sx,
+                    y: newRect.minY + (aE.y - anchor.minY) * sy)
+            }
+            if let pts = resizeAnchorPoints {
+                layer.annotations[idx].points = pts.map { p in
+                    CGPoint(x: newRect.minX + (p.x - anchor.minX) * sx,
+                            y: newRect.minY + (p.y - anchor.minY) * sy)
+                }
+            }
+        }
     }
 
     func endResize() {
         guard resizeAnchor != nil else { return }
         resizeAnchor = nil
+        resizeAnchorArrowStart = nil
+        resizeAnchorArrowEnd = nil
+        resizeAnchorPoints = nil
         persist()
     }
 
@@ -158,6 +224,9 @@ final class EditorViewModel: ObservableObject {
         if moveAnchor == nil {
             snapshot()
             moveAnchor = layer.annotations[idx].rect
+            moveAnchorArrowStart = layer.annotations[idx].arrowStart
+            moveAnchorArrowEnd = layer.annotations[idx].arrowEnd
+            moveAnchorPoints = layer.annotations[idx].points
             if selectedID != annotationID { selectedID = annotationID }
         }
         guard let anchor = moveAnchor else { return }
@@ -167,11 +236,27 @@ final class EditorViewModel: ObservableObject {
             width: anchor.width,
             height: anchor.height
         )
+        if let aS = moveAnchorArrowStart {
+            layer.annotations[idx].arrowStart = CGPoint(
+                x: aS.x + translation.width, y: aS.y + translation.height)
+        }
+        if let aE = moveAnchorArrowEnd {
+            layer.annotations[idx].arrowEnd = CGPoint(
+                x: aE.x + translation.width, y: aE.y + translation.height)
+        }
+        if let pts = moveAnchorPoints {
+            layer.annotations[idx].points = pts.map {
+                CGPoint(x: $0.x + translation.width, y: $0.y + translation.height)
+            }
+        }
     }
 
     func endMove() {
         guard moveAnchor != nil else { return }
         moveAnchor = nil
+        moveAnchorArrowStart = nil
+        moveAnchorArrowEnd = nil
+        moveAnchorPoints = nil
         persist()
     }
 
@@ -240,6 +325,7 @@ final class EditorViewModel: ObservableObject {
         ctx.setStrokeColor(a.color.cgColor)
         ctx.setLineWidth(a.stroke)
         ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
         let r = a.rect
         switch a.kind {
         case .rectangle, .select:
@@ -247,10 +333,9 @@ final class EditorViewModel: ObservableObject {
         case .circle:
             ctx.strokeEllipse(in: r)
         case .arrow:
-            drawArrow(from: CGPoint(x: r.minX, y: r.minY),
-                      to: CGPoint(x: r.maxX, y: r.maxY),
-                      lineWidth: a.stroke,
-                      in: ctx)
+            let p1 = a.arrowStart ?? CGPoint(x: r.minX, y: r.minY)
+            let p2 = a.arrowEnd ?? CGPoint(x: r.maxX, y: r.maxY)
+            drawArrow(from: p1, to: p2, lineWidth: a.stroke, in: ctx)
         case .text:
             let text = a.text ?? "Text"
             let attrs: [NSAttributedString.Key: Any] = [
@@ -259,9 +344,13 @@ final class EditorViewModel: ObservableObject {
             ]
             (text as NSString).draw(at: CGPoint(x: r.minX, y: r.minY),
                                      withAttributes: attrs)
-        case .highlight:
-            ctx.setFillColor(a.color.cgColor.copy(alpha: 0.3) ?? a.color.cgColor)
-            ctx.fill(r)
+        case .freehand:
+            if let pts = a.points, pts.count > 1 {
+                ctx.beginPath()
+                ctx.move(to: pts[0])
+                for p in pts.dropFirst() { ctx.addLine(to: p) }
+                ctx.strokePath()
+            }
         }
         ctx.restoreGState()
     }
@@ -316,6 +405,19 @@ struct EditorView: View {
             statusBar
         }
         .background(Color(nsColor: NSColor.windowBackgroundColor))
+        .background(deleteShortcutHost)
+    }
+
+    private var deleteShortcutHost: some View {
+        Group {
+            Button("") { vm.deleteSelected() }
+                .keyboardShortcut(.delete, modifiers: [])
+            Button("") { vm.deleteSelected() }
+                .keyboardShortcut(.deleteForward, modifiers: [])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .disabled(vm.selectedID == nil || vm.editingTextID != nil)
     }
 
     private var toolbar: some View {
@@ -488,13 +590,10 @@ private struct AnnotationsOverlay: View {
     private func annotationView(for ann: Annotation) -> some View {
         let displayRect = scaledToDisplay(rect: ann.rect)
         let body = ZStack(alignment: .topLeading) {
-            annotationShape(kind: ann.kind, rect: displayRect)
+            shapePath(for: ann, displayRect: displayRect)
                 .stroke(ann.color.color,
-                        style: StrokeStyle(lineWidth: ann.stroke * scale, lineCap: .round))
-            if ann.kind == .highlight {
-                annotationShape(kind: ann.kind, rect: displayRect)
-                    .fill(ann.color.color.opacity(0.3))
-            }
+                        style: StrokeStyle(lineWidth: ann.stroke * scale,
+                                           lineCap: .round, lineJoin: .round))
             if ann.kind == .text {
                 if vm.editingTextID == ann.id {
                     TextAnnotationEditor(vm: vm, ann: ann,
@@ -553,27 +652,79 @@ private struct AnnotationsOverlay: View {
         case .circle:
             path.addEllipse(in: rect)
         case .arrow:
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            let angle = atan2(rect.maxY - rect.minY, rect.maxX - rect.minX)
-            let headLen: CGFloat = 14
-            let left = CGPoint(x: rect.maxX - headLen * cos(angle - .pi/6),
-                               y: rect.maxY - headLen * sin(angle - .pi/6))
-            let right = CGPoint(x: rect.maxX - headLen * cos(angle + .pi/6),
-                                y: rect.maxY - headLen * sin(angle + .pi/6))
-            path.move(to: CGPoint(x: rect.maxX, y: rect.maxY)); path.addLine(to: left)
-            path.move(to: CGPoint(x: rect.maxX, y: rect.maxY)); path.addLine(to: right)
-        case .highlight:
-            path.addRect(rect)
+            path = arrowPath(from: CGPoint(x: rect.minX, y: rect.minY),
+                             to: CGPoint(x: rect.maxX, y: rect.maxY))
+        case .freehand:
+            break
         }
+        return path
+    }
+
+    private func shapePath(for ann: Annotation, displayRect: CGRect) -> Path {
+        switch ann.kind {
+        case .arrow:
+            let s = ann.arrowStart.map(scaleImageToDisplay)
+                    ?? CGPoint(x: displayRect.minX, y: displayRect.minY)
+            let e = ann.arrowEnd.map(scaleImageToDisplay)
+                    ?? CGPoint(x: displayRect.maxX, y: displayRect.maxY)
+            return arrowPath(from: s, to: e)
+        case .freehand:
+            guard let pts = ann.points, pts.count > 1 else { return Path() }
+            var path = Path()
+            let display = pts.map(scaleImageToDisplay)
+            path.move(to: display[0])
+            for p in display.dropFirst() { path.addLine(to: p) }
+            return path
+        default:
+            return annotationShape(kind: ann.kind, rect: displayRect)
+        }
+    }
+
+    private func scaleImageToDisplay(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: p.x * scale, y: p.y * scale)
+    }
+
+    private func arrowPath(from a: CGPoint, to b: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: a)
+        path.addLine(to: b)
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        guard dx != 0 || dy != 0 else { return path }
+        let angle = atan2(dy, dx)
+        let headLen: CGFloat = 14
+        let left = CGPoint(x: b.x - headLen * cos(angle - .pi/6),
+                           y: b.y - headLen * sin(angle - .pi/6))
+        let right = CGPoint(x: b.x - headLen * cos(angle + .pi/6),
+                            y: b.y - headLen * sin(angle + .pi/6))
+        path.move(to: b); path.addLine(to: left)
+        path.move(to: b); path.addLine(to: right)
         return path
     }
 
     @ViewBuilder
     private func draftShape(rect: CGRect) -> some View {
         let stroke = StrokeStyle(lineWidth: vm.stroke * scale, dash: [4, 4], dashPhase: 0)
-        annotationShape(kind: vm.tool, rect: rect)
-            .stroke(vm.color.color.opacity(0.85), style: stroke)
+        if vm.tool == .freehand, vm.draftPoints.count > 1 {
+            freehandPath(points: vm.draftPoints.map(scaleImageToDisplay))
+                .stroke(vm.color.color,
+                        style: StrokeStyle(lineWidth: vm.stroke * scale,
+                                           lineCap: .round, lineJoin: .round))
+        } else if vm.tool == .arrow, let s = vm.dragStart, let e = vm.draftEnd {
+            arrowPath(from: scaleImageToDisplay(s), to: scaleImageToDisplay(e))
+                .stroke(vm.color.color.opacity(0.85), style: stroke)
+        } else {
+            annotationShape(kind: vm.tool, rect: rect)
+                .stroke(vm.color.color.opacity(0.85), style: stroke)
+        }
+    }
+
+    private func freehandPath(points: [CGPoint]) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        for p in points.dropFirst() { path.addLine(to: p) }
+        return path
     }
 
     private func selectionHandles(for ann: Annotation, displayRect: CGRect) -> some View {

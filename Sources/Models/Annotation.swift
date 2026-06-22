@@ -3,7 +3,7 @@ import CoreGraphics
 import SwiftUI
 
 enum AnnotationTool: String, CaseIterable, Codable {
-    case select, rectangle, circle, arrow, text, highlight
+    case select, rectangle, circle, arrow, text, freehand
 
     var symbol: String {
         switch self {
@@ -12,7 +12,7 @@ enum AnnotationTool: String, CaseIterable, Codable {
         case .circle: return "circle"
         case .arrow: return "arrow.up.right"
         case .text: return "textformat"
-        case .highlight: return "highlighter"
+        case .freehand: return "scribble.variable"
         }
     }
 
@@ -23,7 +23,7 @@ enum AnnotationTool: String, CaseIterable, Codable {
         case .circle: return "Circle"
         case .arrow: return "Arrow"
         case .text: return "Text"
-        case .highlight: return "Highlight"
+        case .freehand: return "Draw"
         }
     }
 }
@@ -67,19 +67,28 @@ struct Annotation: Identifiable, Codable, Equatable, Hashable {
     var color: AnnotationColor
     var stroke: Double
     var text: String?
+    var arrowStart: CGPoint?
+    var arrowEnd: CGPoint?
+    var points: [CGPoint]?
 
     init(id: UUID = UUID(),
          kind: AnnotationTool,
          rect: CGRect,
          color: AnnotationColor,
          stroke: Double = 3.0,
-         text: String? = nil) {
+         text: String? = nil,
+         arrowStart: CGPoint? = nil,
+         arrowEnd: CGPoint? = nil,
+         points: [CGPoint]? = nil) {
         self.id = id
         self.kind = kind
         self.rect = rect
         self.color = color
         self.stroke = stroke
         self.text = text
+        self.arrowStart = arrowStart
+        self.arrowEnd = arrowEnd
+        self.points = points
     }
 }
 
