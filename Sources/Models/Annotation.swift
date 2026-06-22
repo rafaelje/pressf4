@@ -3,11 +3,12 @@ import CoreGraphics
 import SwiftUI
 
 enum AnnotationTool: String, CaseIterable, Codable {
-    case select, rectangle, circle, arrow, text, freehand
+    case select, hand, rectangle, circle, arrow, text, freehand
 
     var symbol: String {
         switch self {
         case .select: return "cursorarrow"
+        case .hand: return "hand.raised.fill"
         case .rectangle: return "rectangle"
         case .circle: return "circle"
         case .arrow: return "arrow.up.right"
@@ -19,6 +20,7 @@ enum AnnotationTool: String, CaseIterable, Codable {
     var label: String {
         switch self {
         case .select: return "Select"
+        case .hand: return "Pan"
         case .rectangle: return "Rectangle"
         case .circle: return "Circle"
         case .arrow: return "Arrow"

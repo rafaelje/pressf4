@@ -14,6 +14,8 @@ final class EditorViewModel: ObservableObject {
     @Published var stroke: Double = 3.0
     @Published var selectedID: UUID?
 
+    @Published var zoom: Double = 1.0
+
     @Published var draftRect: CGRect?
     @Published var dragStart: CGPoint?
     @Published var draftEnd: CGPoint?
@@ -42,9 +44,17 @@ final class EditorViewModel: ObservableObject {
         self.capture = capture
         self.layer = LibraryStore.shared.loadAnnotations(for: capture)
         self.selectedID = nil
+        self.zoom = 1.0
         self.undoStack.removeAll()
         self.redoStack.removeAll()
     }
+
+    static let minZoom: Double = 0.25
+    static let maxZoom: Double = 4.0
+
+    func zoomIn()  { zoom = min(Self.maxZoom, zoom * 1.25) }
+    func zoomOut() { zoom = max(Self.minZoom, zoom / 1.25) }
+    func resetZoom() { zoom = 1.0 }
 
     private func snapshot() {
         undoStack.append(layer)
@@ -328,7 +338,7 @@ final class EditorViewModel: ObservableObject {
         ctx.setLineJoin(.round)
         let r = a.rect
         switch a.kind {
-        case .rectangle, .select:
+        case .rectangle, .select, .hand:
             ctx.stroke(r)
         case .circle:
             ctx.strokeEllipse(in: r)
@@ -395,6 +405,7 @@ final class EditorViewModel: ObservableObject {
 
 struct EditorView: View {
     @ObservedObject var vm: EditorViewModel
+    @State private var scrollController = CanvasScrollController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -487,28 +498,45 @@ struct EditorView: View {
     }
 
     private var canvas: some View {
+        HStack(spacing: 0) {
+            imageCanvas
+            Divider().opacity(0.4)
+            zoomBar
+        }
+    }
+
+    private var imageCanvas: some View {
         GeometryReader { proxy in
             ZStack {
                 Color(nsColor: NSColor.underPageBackgroundColor)
                 if let img = LibraryStore.shared.loadImage(for: vm.capture) {
-                    let fitted = fitSize(image: img.size, into: proxy.size)
-                    ZStack(alignment: .topLeading) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: fitted.size.width, height: fitted.size.height)
-                            .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+                    let base = fitSize(image: img.size, into: proxy.size)
+                    let displaySize = CGSize(
+                        width: base.size.width * vm.zoom,
+                        height: base.size.height * vm.zoom)
+                    let docSize = CGSize(
+                        width: max(displaySize.width, proxy.size.width),
+                        height: max(displaySize.height, proxy.size.height))
+                    ScrollableCanvas(contentSize: docSize, controller: scrollController) {
+                        ZStack(alignment: .topLeading) {
+                            Image(nsImage: img)
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: displaySize.width, height: displaySize.height)
+                                .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
 
-                        AnnotationsOverlay(vm: vm, imageSize: img.size, displaySize: fitted.size)
-                            .frame(width: fitted.size.width, height: fitted.size.height)
-                            .contentShape(Rectangle())
-                            .gesture(drawingGesture(imageSize: img.size, displaySize: fitted.size))
+                            AnnotationsOverlay(vm: vm, imageSize: img.size, displaySize: displaySize)
+                                .frame(width: displaySize.width, height: displaySize.height)
+                                .contentShape(Rectangle())
+                                .gesture(canvasGesture(imageSize: img.size, displaySize: displaySize))
+                        }
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .position(x: docSize.width / 2, y: docSize.height / 2)
                     }
-                    .frame(width: fitted.size.width, height: fitted.size.height)
-                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                 } else {
                     Text("Could not load image")
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .focusable()
@@ -519,6 +547,45 @@ struct EditorView: View {
         }
     }
 
+    private var zoomBar: some View {
+        VStack(spacing: 10) {
+            Button { vm.zoomIn() } label: {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .buttonStyle(.borderless)
+            .help("Zoom in")
+            .keyboardShortcut("=", modifiers: .command)
+
+            Slider(value: $vm.zoom,
+                   in: EditorViewModel.minZoom...EditorViewModel.maxZoom)
+                .rotationEffect(.degrees(-90))
+                .frame(width: 160)
+                .frame(width: 28, height: 160)
+
+            Button { vm.zoomOut() } label: {
+                Image(systemName: "minus.magnifyingglass")
+            }
+            .buttonStyle(.borderless)
+            .help("Zoom out")
+            .keyboardShortcut("-", modifiers: .command)
+
+            Button {
+                vm.resetZoom()
+            } label: {
+                Text("\(Int(vm.zoom * 100))%")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Reset zoom (100%)")
+            .keyboardShortcut("0", modifiers: .command)
+        }
+        .padding(.vertical, 12)
+        .frame(width: 44)
+        .frame(maxHeight: .infinity)
+        .background(Color(nsColor: NSColor.windowBackgroundColor))
+    }
+
     private func fitSize(image: CGSize, into container: CGSize) -> (size: CGSize, scale: CGFloat) {
         let padding: CGFloat = 32
         let avail = CGSize(width: max(100, container.width - padding * 2),
@@ -527,9 +594,14 @@ struct EditorView: View {
         return (CGSize(width: image.width * scale, height: image.height * scale), scale)
     }
 
-    private func drawingGesture(imageSize: CGSize, displaySize: CGSize) -> some Gesture {
+    private func canvasGesture(imageSize: CGSize, displaySize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                if vm.tool == .hand {
+                    scrollController.beginPanIfNeeded()
+                    scrollController.applyPan(translation: value.translation)
+                    return
+                }
                 guard vm.tool != .select else { return }
                 let scaled = scaleToImage(point: value.location,
                                           imageSize: imageSize, displaySize: displaySize)
@@ -540,6 +612,10 @@ struct EditorView: View {
                 vm.updateDraft(to: scaled)
             }
             .onEnded { _ in
+                if vm.tool == .hand {
+                    scrollController.endPan()
+                    return
+                }
                 guard vm.tool != .select else { return }
                 vm.commitDraft()
             }
@@ -647,7 +723,7 @@ private struct AnnotationsOverlay: View {
     private func annotationShape(kind: AnnotationTool, rect: CGRect) -> Path {
         var path = Path()
         switch kind {
-        case .rectangle, .select, .text:
+        case .rectangle, .select, .hand, .text:
             path.addRect(rect)
         case .circle:
             path.addEllipse(in: rect)
@@ -805,5 +881,75 @@ private struct TextAnnotationEditor: View {
     private func commit() {
         vm.updateAnnotationText(ann.id, text: draft)
         vm.finishEditingText()
+    }
+}
+
+@MainActor
+final class CanvasScrollController {
+    weak var scrollView: NSScrollView?
+    private var panStartOrigin: CGPoint?
+
+    func beginPanIfNeeded() {
+        guard panStartOrigin == nil else { return }
+        panStartOrigin = scrollView?.contentView.bounds.origin
+    }
+
+    func applyPan(translation: CGSize) {
+        guard let scrollView, let start = panStartOrigin else { return }
+        let docSize = scrollView.documentView?.frame.size ?? .zero
+        let visible = scrollView.contentView.bounds.size
+        let maxX = max(0, docSize.width - visible.width)
+        let maxY = max(0, docSize.height - visible.height)
+        let origin = CGPoint(
+            x: min(maxX, max(0, start.x - translation.width)),
+            y: min(maxY, max(0, start.y - translation.height)))
+        scrollView.contentView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    func endPan() {
+        panStartOrigin = nil
+    }
+}
+
+struct ScrollableCanvas<Content: View>: NSViewRepresentable {
+    let contentSize: CGSize
+    let controller: CanvasScrollController
+    @ViewBuilder var content: () -> Content
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = false
+
+        let hosting = NSHostingView(rootView: content())
+        hosting.frame = NSRect(origin: .zero, size: contentSize)
+        scroll.documentView = hosting
+        context.coordinator.hosting = hosting
+
+        controller.scrollView = scroll
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let hosting = context.coordinator.hosting as? NSHostingView<Content> else { return }
+        hosting.rootView = content()
+        let newFrame = NSRect(origin: .zero, size: contentSize)
+        if hosting.frame != newFrame {
+            hosting.frame = newFrame
+        }
+        if controller.scrollView !== scroll {
+            controller.scrollView = scroll
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var hosting: NSView?
     }
 }
