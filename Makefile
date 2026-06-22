@@ -30,10 +30,10 @@ MACOS_DIR     := $(CONTENTS)/MacOS
 RES_DIR       := $(CONTENTS)/Resources
 EXECUTABLE    := $(MACOS_DIR)/$(APP_NAME)
 
-SOURCES       := $(shell find Sources -name '*.swift' -not -path 'Sources/Tests/*')
-TEST_SOURCES  := Sources/Models/Capture.swift Sources/Models/Annotation.swift Sources/Tests/SmokeTest.swift
+SOURCES       := $(shell find Sources -name '*.swift')
 INFO_PLIST    := Resources/Info.plist
 ENTITLEMENTS  := Resources/CapturaApp.entitlements
+APP_ICON      := Resources/AppIcon.icns
 
 CACHE_DIR     := $(abspath $(BUILD_DIR)/cache)
 MODULE_CACHE  := $(CACHE_DIR)/modules
@@ -56,22 +56,17 @@ export TMPDIR := $(CACHE_DIR)/tmp
 export CLANG_MODULE_CACHE_PATH := $(MODULE_CACHE)
 export SWIFT_MODULE_CACHE_PATH := $(MODULE_CACHE)
 
-.PHONY: all build run clean open install resign test
+.PHONY: all build run clean open install resign test icon
+
+ICON_SVG      := images/icon.svg
+ICONSET_DIR   := images/AppIcon.iconset
 
 all: build
 
-test: | $(CACHE_DIR)
-	@echo "→ Building smoke test…"
-	@xcrun swiftc -O -target $(TARGET) \
-	          -module-cache-path $(MODULE_CACHE) \
-	          -D SMOKE_TEST \
-	          -parse-as-library \
-	          -framework AppKit -framework SwiftUI \
-	          -o $(BUILD_DIR)/SmokeTest $(TEST_SOURCES)
-	@echo "→ Running…"
-	@$(BUILD_DIR)/SmokeTest
+test:
+	@env -u TMPDIR -u CLANG_MODULE_CACHE_PATH -u SWIFT_MODULE_CACHE_PATH swift test
 
-build: $(EXECUTABLE) $(CONTENTS)/Info.plist sign
+build: $(EXECUTABLE) $(CONTENTS)/Info.plist $(RES_DIR)/AppIcon.icns sign
 
 $(EXECUTABLE): $(SOURCES) | $(MACOS_DIR) $(CACHE_DIR)
 	@echo "→ Compiling $(APP_NAME) for $(TARGET)…"
@@ -87,6 +82,10 @@ $(CACHE_DIR):
 $(CONTENTS)/Info.plist: $(INFO_PLIST) | $(MACOS_DIR)
 	@cp $(INFO_PLIST) $@
 	@echo "✓ Info.plist copied"
+
+$(RES_DIR)/AppIcon.icns: $(APP_ICON) | $(MACOS_DIR)
+	@cp $(APP_ICON) $@
+	@echo "✓ AppIcon.icns copied"
 
 sign: $(EXECUTABLE) $(ENTITLEMENTS)
 	@echo "→ Signing with $(SIGN_LABEL)…"
@@ -117,3 +116,25 @@ resign: $(ENTITLEMENTS)
 	          --entitlements $(ENTITLEMENTS) \
 	          --options runtime \
 	          $(APP_BUNDLE)
+
+# Regenerate AppIcon.icns from images/icon.svg. Requires rsvg-convert (brew install librsvg).
+icon: $(ICON_SVG)
+	@command -v rsvg-convert >/dev/null 2>&1 || { echo "✗ rsvg-convert not found — run: brew install librsvg"; exit 1; }
+	@echo "→ Rendering iconset from $(ICON_SVG)…"
+	@mkdir -p $(ICONSET_DIR)
+	@for s in 16 32 64 128 256 512 1024; do \
+	    rsvg-convert -w $$s -h $$s $(ICON_SVG) -o $(ICONSET_DIR)/_$$s.png; \
+	done
+	@mv $(ICONSET_DIR)/_16.png   $(ICONSET_DIR)/icon_16x16.png
+	@cp $(ICONSET_DIR)/_32.png   $(ICONSET_DIR)/icon_16x16@2x.png
+	@mv $(ICONSET_DIR)/_32.png   $(ICONSET_DIR)/icon_32x32.png
+	@cp $(ICONSET_DIR)/_64.png   $(ICONSET_DIR)/icon_32x32@2x.png
+	@rm  $(ICONSET_DIR)/_64.png
+	@mv $(ICONSET_DIR)/_128.png  $(ICONSET_DIR)/icon_128x128.png
+	@cp $(ICONSET_DIR)/_256.png  $(ICONSET_DIR)/icon_128x128@2x.png
+	@mv $(ICONSET_DIR)/_256.png  $(ICONSET_DIR)/icon_256x256.png
+	@cp $(ICONSET_DIR)/_512.png  $(ICONSET_DIR)/icon_256x256@2x.png
+	@mv $(ICONSET_DIR)/_512.png  $(ICONSET_DIR)/icon_512x512.png
+	@mv $(ICONSET_DIR)/_1024.png $(ICONSET_DIR)/icon_512x512@2x.png
+	@iconutil --convert icns $(ICONSET_DIR) --output $(APP_ICON)
+	@echo "✓ Wrote $(APP_ICON) and refreshed $(ICONSET_DIR)/"

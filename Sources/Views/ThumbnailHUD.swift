@@ -47,8 +47,8 @@ final class ThumbnailHUDController: ObservableObject {
     func present(capture: Capture, onOpen: @escaping () -> Void) {
         dismiss()
 
-        guard let screen = NSScreen.main else { return }
-        let origin = corner.origin(in: screen.visibleFrame, panelSize: panelSize, margin: margin)
+        guard let screen = activeScreen() else { return }
+        let origin = clampedOrigin(in: screen.visibleFrame)
         let rect = NSRect(origin: origin, size: panelSize)
 
         let w = NSPanel(contentRect: rect,
@@ -102,11 +102,30 @@ final class ThumbnailHUDController: ObservableObject {
         })
     }
 
+    private func activeScreen() -> NSScreen? {
+        let cursor = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(cursor) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+    }
+
+    /// Compute the panel origin for the current corner and pin it inside `visible`
+    /// so the panel can never extend off-screen, even if the screen turns out
+    /// narrower than the formula assumed.
+    private func clampedOrigin(in visible: CGRect) -> NSPoint {
+        let raw = corner.origin(in: visible, panelSize: panelSize, margin: margin)
+        let maxX = visible.maxX - panelSize.width
+        let maxY = visible.maxY - panelSize.height
+        let x = max(visible.minX, min(raw.x, maxX))
+        let y = max(visible.minY, min(raw.y, maxY))
+        return NSPoint(x: x, y: y)
+    }
+
     private func repositionWindow(animated: Bool) {
         guard let w = window else { return }
-        let screen = w.screen ?? NSScreen.main
+        let screen = w.screen ?? activeScreen()
         guard let visible = screen?.visibleFrame else { return }
-        let origin = corner.origin(in: visible, panelSize: panelSize, margin: margin)
+        let origin = clampedOrigin(in: visible)
         let newFrame = NSRect(origin: origin, size: panelSize)
         if animated {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -166,29 +185,33 @@ private struct ThumbnailHUDView: View {
 
     private var preview: some View {
         ZStack(alignment: .topTrailing) {
-            Group {
-                if let image = LibraryStore.shared.loadImage(for: capture) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.2)],
-                                   startPoint: .top, endPoint: .bottom)
+            // Color.clear anchors the layout at 16:10. The image lives in an
+            // overlay so its aspect ratio cannot inflate the container — wide
+            // captures used to push the action bar buttons off the panel.
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .aspectRatio(16/10, contentMode: .fit)
+                .overlay {
+                    if let image = LibraryStore.shared.loadImage(for: capture) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.2)],
+                                       startPoint: .top, endPoint: .bottom)
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(16/10, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
-            .onDrag {
-                let url = LibraryStore.shared.imageURL(for: capture)
-                return NSItemProvider(contentsOf: url) ?? NSItemProvider()
-            }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onOpen)
+                .onDrag {
+                    let url = LibraryStore.shared.imageURL(for: capture)
+                    return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+                }
 
             CloseButton(action: onClose)
                 .padding(6)

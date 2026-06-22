@@ -20,13 +20,19 @@ Native macOS app to capture screen areas, show thumbnails, and annotate them. Li
 ```bash
 cd pressf4
 make          # compile, assemble .app, ad-hoc sign with entitlements
-make test     # run smoke tests (models + serialization)
+make test     # XCTest suite over the pure model logic (wraps `swift test`)
 make run      # build + open the app
 make install  # copy to /Applications
 make clean
 ```
 
 The binary lands at `build/pressf4.app`.
+
+`make test` delegates to SwiftPM (`swift test`). The `Package.swift` at the project
+root exposes only `Sources/Models/` as the library `PressF4Core`; the AppKit /
+ScreenCaptureKit / SwiftUI surface area lives in `Sources/Services` and
+`Sources/Views` and is built exclusively through the Makefile + `swiftc`. Tests
+live under `Tests/PressF4CoreTests/`, one `XCTestCase` per unit.
 
 ## First launch — permissions
 
@@ -42,6 +48,11 @@ The binary lands at `build/pressf4.app`.
 | Capture area | `F4` |
 | Show main window | `⌃⌥⌘ H` |
 | Open last capture in editor | `⌃⌥⌘ E` |
+| Copy annotated image (editor) | `⌘ C` |
+| Save annotated image (editor) | `⌘ S` |
+| Undo / redo (editor) | `⌘ Z` / `⇧⌘ Z` |
+| Delete selected annotation | `⌫` |
+| Zoom in / out / reset (editor) | `⌘ =` / `⌘ -` / `⌘ 0` |
 
 > ⚠️ **About F4 on Mac**: by default macOS uses F-keys for hardware functions. Enable *System Settings → Keyboard → "Use F1, F2, etc. keys as standard function keys"* so F4 triggers the capture directly; otherwise you'll need to press `Fn+F4`.
 
@@ -53,8 +64,8 @@ The binary lands at `build/pressf4.app`.
    - Click the thumbnail → open the editor.
    - ✎ button → editor. ⧉ button → copy to clipboard.
 4. The capture is already copied to the clipboard automatically.
-5. In the editor: pick a tool (rectangle, circle, arrow, text, highlight), color, thickness; drag to create; `Delete` removes the selected annotation; `⌘Z` undoes.
-6. `⌘C` copies with the annotations applied; `⌘S` saves to a file.
+5. In the editor: pick a tool (select, pan, rectangle, circle, arrow, text, freehand), color, thickness; drag to create; `⌫` removes the selected annotation; `⌘Z` undoes, `⇧⌘Z` redoes.
+6. `⌘C` copies with the annotations applied; `⌘S` saves to a file. Zoom with `⌘=` / `⌘-` / `⌘0`.
 
 ## Where captures are stored
 
@@ -72,20 +83,28 @@ Annotations are **editable objects**, not pixels flattened onto the PNG. When sa
 ```
 Sources/
 ├── App.swift                       # @main + AppDelegate + AppController
-├── Models/
+├── Models/                         # also published as the PressF4Core SwiftPM library
 │   ├── Capture.swift               # Individual capture
-│   └── Annotation.swift            # Types, colors, layer
+│   ├── Annotation.swift            # Types, colors, layer
+│   ├── CaptureGeometry.swift       # Pure crop/coordinate math
+│   ├── EditorTransforms.swift      # Pure resize / move transforms
+│   └── LayerHistory.swift          # Bounded undo/redo stack
 ├── Services/
 │   ├── CaptureService.swift        # ScreenCaptureKit wrapper
 │   ├── LibraryStore.swift          # Local persistence
 │   └── ShortcutsManager.swift      # Global Carbon hotkeys
-├── Views/
-│   ├── SelectionOverlay.swift      # Full-screen selection overlay
-│   ├── ThumbnailHUD.swift          # Post-capture floating thumbnail
-│   ├── EditorView.swift            # Canvas + tools
-│   └── MainWindow.swift            # NSSplitView with sidebar
-└── Tests/
-    └── SmokeTest.swift             # `make test`
+└── Views/
+    ├── SelectionOverlay.swift      # Full-screen selection overlay
+    ├── ThumbnailHUD.swift          # Post-capture floating thumbnail
+    ├── EditorView.swift            # Canvas + tools
+    └── MainWindow.swift            # NSSplitView with sidebar
+
+Tests/PressF4CoreTests/             # XCTest target wired through Package.swift
+├── CaptureTests.swift
+├── AnnotationTests.swift
+├── CaptureGeometryTests.swift
+├── EditorTransformsTests.swift
+└── LayerHistoryTests.swift
 ```
 
 ## Technical notes

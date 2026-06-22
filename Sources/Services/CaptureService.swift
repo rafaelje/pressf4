@@ -33,7 +33,10 @@ final class CaptureService {
             content = try await SCShareableContent.excludingDesktopWindows(false,
                                                                             onScreenWindowsOnly: true)
         } catch {
-            throw CaptureError.permissionDenied
+            if !CGPreflightScreenCaptureAccess() {
+                throw CaptureError.permissionDenied
+            }
+            throw CaptureError.captureFailed(error.localizedDescription)
         }
 
         guard let display = bestDisplay(for: rectGlobal, in: content.displays) else {
@@ -41,16 +44,18 @@ final class CaptureService {
         }
 
         let displayFrameGlobal = globalFrame(for: display)
-        let scale = CGFloat(display.width) / displayFrameGlobal.width
+        let displayPixelSize = CGSize(width: display.width, height: display.height)
+        let localRect = CaptureGeometry.displayLocalRect(
+            globalRect: rectGlobal,
+            displayFrameGlobal: displayFrameGlobal,
+            displayPixelSize: displayPixelSize)
 
-        let localRect = CGRect(
-            x: (rectGlobal.origin.x - displayFrameGlobal.origin.x) * scale,
-            y: (rectGlobal.origin.y - displayFrameGlobal.origin.y) * scale,
-            width: rectGlobal.width * scale,
-            height: rectGlobal.height * scale
-        ).integral
-
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Exclude our own windows (selection overlay, HUD, editor) so the dim/UI
+        // never ends up baked into the capture if orderOut() hasn't reached the
+        // WindowServer's compositor yet.
+        let myPID = NSRunningApplication.current.processIdentifier
+        let ownWindows = content.windows.filter { $0.owningApplication?.processID == myPID }
+        let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
         let config = SCStreamConfiguration()
         config.width = display.width
         config.height = display.height
@@ -67,13 +72,11 @@ final class CaptureService {
             throw CaptureError.captureFailed(error.localizedDescription)
         }
 
-        let clamped = CGRect(
-            x: max(0, min(localRect.origin.x, CGFloat(fullImage.width - 1))),
-            y: max(0, min(localRect.origin.y, CGFloat(fullImage.height - 1))),
-            width: min(localRect.width, CGFloat(fullImage.width) - localRect.origin.x),
-            height: min(localRect.height, CGFloat(fullImage.height) - localRect.origin.y)
-        ).integral
-
+        let imagePixelSize = CGSize(width: fullImage.width, height: fullImage.height)
+        guard let clamped = CaptureGeometry.clampedCropRect(localRect,
+                                                            imagePixelSize: imagePixelSize) else {
+            throw CaptureError.captureFailed("selected area is outside the display bounds")
+        }
         guard let cropped = fullImage.cropping(to: clamped) else {
             throw CaptureError.captureFailed("crop failed")
         }
@@ -108,10 +111,13 @@ final class CaptureService {
     }
 
     /// Convert NSScreen frame (bottom-left, primary screen at 0,0) into CG global coords (top-left).
+    /// The primary screen is the one whose origin is (0,0) — not necessarily `NSScreen.screens.first`,
+    /// whose ordering is undocumented.
     private func convertToGlobalTopLeft(_ frame: CGRect) -> CGRect {
-        guard let primary = NSScreen.screens.first else { return frame }
-        let primaryHeight = primary.frame.height
-        let topY = primaryHeight - frame.origin.y - frame.height
-        return CGRect(x: frame.origin.x, y: topY, width: frame.width, height: frame.height)
+        let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+                    ?? NSScreen.main
+                    ?? NSScreen.screens.first
+        guard let primary else { return frame }
+        return CaptureGeometry.toGlobalTopLeft(frame, primaryHeight: primary.frame.height)
     }
 }

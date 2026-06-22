@@ -33,11 +33,12 @@ final class SelectionOverlayController {
 }
 
 final class SelectionWindow: NSWindow {
-    private let completion: (CGRect?) -> Void
+    private let rawCompletion: (CGRect?) -> Void
+    private var didComplete = false
     private weak var screenRef: NSScreen?
 
     init(screen: NSScreen, completion: @escaping (CGRect?) -> Void) {
-        self.completion = completion
+        self.rawCompletion = completion
         self.screenRef = screen
         super.init(contentRect: screen.frame,
                    styleMask: .borderless,
@@ -55,7 +56,7 @@ final class SelectionWindow: NSWindow {
 
         let view = SelectionView(frame: NSRect(origin: .zero, size: screen.frame.size),
                                  screen: screen,
-                                 completion: completion)
+                                 completion: { [weak self] rect in self?.finish(rect) })
         self.contentView = view
         self.initialFirstResponder = view
     }
@@ -63,13 +64,24 @@ final class SelectionWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
-    override func cancelOperation(_ sender: Any?) {
-        completion(nil)
+    /// Routes the completion call so cancel-via-Esc, mouse-up and overlay dismissal
+    /// can all fire safely; only the first one wins.
+    func finish(_ rect: CGRect?) {
+        guard !didComplete else { return }
+        didComplete = true
+        rawCompletion(rect)
     }
 
+    override func cancelOperation(_ sender: Any?) {
+        finish(nil)
+    }
+
+    // Belt-and-suspenders: a borderless screen-saver-level window with no menu can
+    // miss the cancelOperation path on some macOS versions. Routing through finish()
+    // makes the extra handler safe — only the first call wins.
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { // Esc
-            completion(nil)
+        if event.keyCode == 53 {
+            finish(nil)
         } else {
             super.keyDown(with: event)
         }
