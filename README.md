@@ -2,6 +2,8 @@
 
 Native macOS app to capture screen areas, show thumbnails, and annotate them. Lives in the menu bar, invoked with **F4**.
 
+![PressF4 capture](images/pressf4_capture.png)
+
 - Language: **Swift 5.9 / SwiftUI / AppKit**
 - Target: **macOS 14+** (Sonoma or later)
 - Capture: native **ScreenCaptureKit**
