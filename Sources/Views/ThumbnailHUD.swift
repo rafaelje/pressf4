@@ -51,7 +51,7 @@ final class ThumbnailHUDController {
         }
 
         window = w
-        scheduleDismiss(after: 4.0)
+        scheduleDismiss(after: 8.0)
     }
 
     func dismiss() {
@@ -66,7 +66,18 @@ final class ThumbnailHUDController {
         })
     }
 
+    func pauseDismiss() {
+        dismissWork?.cancel()
+        dismissWork = nil
+    }
+
+    func resumeDismiss(after seconds: Double = 2.5) {
+        guard window != nil else { return }
+        scheduleDismiss(after: seconds)
+    }
+
     private func scheduleDismiss(after seconds: Double) {
+        dismissWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.dismiss() }
         dismissWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
@@ -94,6 +105,11 @@ private struct ThumbnailHUDView: View {
                 .aspectRatio(16/10, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onTapGesture(perform: onOpen)
+                .onDrag {
+                    ThumbnailHUDController.shared.pauseDismiss()
+                    let url = LibraryStore.shared.imageURL(for: capture)
+                    return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+                }
 
             HStack(spacing: 6) {
                 Text("\(capture.displayDims) · PNG")
@@ -105,14 +121,14 @@ private struct ThumbnailHUDView: View {
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(HUDButtonStyle())
-                .help("Editar")
+                .help("Edit")
 
                 Button(action: onCopy) {
                     Image(systemName: "doc.on.doc")
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(HUDButtonStyle())
-                .help("Copiar")
+                .help("Copy")
             }
             .padding(.horizontal, 4)
         }
@@ -125,7 +141,14 @@ private struct ThumbnailHUDView: View {
                         .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
                 )
         )
-        .onHover { hover = $0 }
+        .onHover { isHover in
+            hover = isHover
+            if isHover {
+                ThumbnailHUDController.shared.pauseDismiss()
+            } else {
+                ThumbnailHUDController.shared.resumeDismiss()
+            }
+        }
     }
 
     private var preview: some View {

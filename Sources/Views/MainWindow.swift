@@ -56,18 +56,18 @@ struct SidebarView: View {
                             onSelect(capture)
                         }
                         .contextMenu {
-                            Button("Abrir") {
+                            Button("Open") {
                                 store.selectedID = capture.id
                                 onSelect(capture)
                             }
-                            Button("Copiar al portapapeles") {
+                            Button("Copy to Clipboard") {
                                 ThumbnailHUDController.copyToPasteboard(capture: capture)
                             }
-                            Button("Mostrar en Finder") {
+                            Button("Show in Finder") {
                                 store.revealInFinder(capture)
                             }
                             Divider()
-                            Button("Eliminar", role: .destructive) {
+                            Button("Delete", role: .destructive) {
                                 store.delete(capture)
                             }
                         }
@@ -82,7 +82,7 @@ struct SidebarView: View {
                 AppController.shared.beginCapture()
             } label: {
                 VStack(spacing: 4) {
-                    Text("+ Nueva captura").font(.system(size: 12, weight: .medium))
+                    Text("+ New Capture").font(.system(size: 12, weight: .medium))
                     HStack(spacing: 2) {
                         ShortcutKey("F4")
                     }
@@ -170,11 +170,11 @@ struct EmptyState: View {
             Image(systemName: "camera.viewfinder")
                 .font(.system(size: 56))
                 .foregroundStyle(.secondary)
-            Text("Aún no hay capturas")
+            Text("No captures yet")
                 .font(.title3)
-            Text("Presiona F4 para tomar una")
+            Text("Press F4 to take one")
                 .foregroundStyle(.secondary)
-            Button("Tomar captura") {
+            Button("Take Capture") {
                 AppController.shared.beginCapture()
             }
             .buttonStyle(.borderedProminent)

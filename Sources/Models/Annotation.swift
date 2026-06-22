@@ -18,12 +18,12 @@ enum AnnotationTool: String, CaseIterable, Codable {
 
     var label: String {
         switch self {
-        case .select: return "Seleccionar"
-        case .rectangle: return "Recuadro"
-        case .circle: return "Círculo"
-        case .arrow: return "Flecha"
-        case .text: return "Texto"
-        case .highlight: return "Resaltar"
+        case .select: return "Select"
+        case .rectangle: return "Rectangle"
+        case .circle: return "Circle"
+        case .arrow: return "Arrow"
+        case .text: return "Text"
+        case .highlight: return "Highlight"
         }
     }
 }

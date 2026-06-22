@@ -11,10 +11,10 @@ enum CaptureError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDisplay: return "No se encontró una pantalla disponible."
-        case .permissionDenied: return "Concede permiso de Grabación de Pantalla en Ajustes del Sistema."
-        case .captureFailed(let s): return "La captura falló: \(s)"
-        case .emptyRect: return "El área seleccionada es demasiado pequeña."
+        case .noDisplay: return "No available display was found."
+        case .permissionDenied: return "Grant Screen Recording permission in System Settings."
+        case .captureFailed(let s): return "Capture failed: \(s)"
+        case .emptyRect: return "The selected area is too small."
         }
     }
 }

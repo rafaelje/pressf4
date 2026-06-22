@@ -31,10 +31,10 @@ struct Capture: Identifiable, Codable, Equatable, Hashable {
         let calendar = Calendar.current
         if calendar.isDateInToday(createdAt) {
             formatter.dateFormat = "HH:mm"
-            return formatter.string(from: createdAt) + " · hoy"
+            return formatter.string(from: createdAt) + " · today"
         } else if calendar.isDateInYesterday(createdAt) {
             formatter.dateFormat = "HH:mm"
-            return "ayer · " + formatter.string(from: createdAt)
+            return "yesterday · " + formatter.string(from: createdAt)
         } else {
             formatter.dateFormat = "d MMM HH:mm"
             return formatter.string(from: createdAt)

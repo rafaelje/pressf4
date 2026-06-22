@@ -144,7 +144,7 @@ final class EditorViewModel: ObservableObject {
                       lineWidth: a.stroke,
                       in: ctx)
         case .text:
-            let text = a.text ?? "Texto"
+            let text = a.text ?? "Text"
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
                 .foregroundColor: a.color.nsColor
@@ -184,7 +184,7 @@ final class EditorViewModel: ObservableObject {
         guard let img = render() else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "captura-\(Int(Date().timeIntervalSince1970)).png"
+        panel.nameFieldStringValue = "capture-\(Int(Date().timeIntervalSince1970)).png"
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
             if let tiff = img.tiffRepresentation,
@@ -259,14 +259,14 @@ struct EditorView: View {
             Spacer()
 
             Button { vm.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                .help("Deshacer (⌘Z)")
+                .help("Undo (⌘Z)")
                 .buttonStyle(.bordered)
             Button { vm.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                .help("Rehacer (⇧⌘Z)")
+                .help("Redo (⇧⌘Z)")
                 .buttonStyle(.bordered)
-            Button("Copiar") { vm.copyToPasteboard() }
+            Button("Copy") { vm.copyToPasteboard() }
                 .keyboardShortcut("c", modifiers: .command)
-            Button("Guardar") { vm.saveAs() }
+            Button("Save") { vm.saveAs() }
                 .keyboardShortcut("s", modifiers: .command)
                 .buttonStyle(.borderedProminent)
         }
@@ -295,7 +295,7 @@ struct EditorView: View {
                     .frame(width: fitted.size.width, height: fitted.size.height)
                     .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                 } else {
-                    Text("No se pudo cargar la imagen")
+                    Text("Could not load image")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -342,7 +342,7 @@ struct EditorView: View {
             Text("\(vm.tool.label) · \(Int(vm.stroke)) px")
                 .foregroundStyle(.secondary)
             Text("•").foregroundStyle(.secondary)
-            Text("\(vm.layer.annotations.count) anotación\(vm.layer.annotations.count == 1 ? "" : "es")")
+            Text("\(vm.layer.annotations.count) annotation\(vm.layer.annotations.count == 1 ? "" : "s")")
                 .foregroundStyle(.secondary)
             Spacer()
             Text(vm.capture.displayDims)
@@ -372,7 +372,7 @@ private struct AnnotationsOverlay: View {
                             .fill(ann.color.color.opacity(0.3))
                     }
                     if ann.kind == .text {
-                        Text(ann.text ?? "Texto")
+                        Text(ann.text ?? "Text")
                             .font(.system(size: 18 * scale, weight: .semibold))
                             .foregroundStyle(ann.color.color)
                             .position(x: displayRect.midX, y: displayRect.midY)

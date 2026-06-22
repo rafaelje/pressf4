@@ -70,9 +70,9 @@ final class ShortcutsManager {
 
     private func describe(status: OSStatus) -> String {
         switch status {
-        case -9878: return "eventHotKeyExistsErr — el atajo ya está en uso por otra app"
-        case -50:   return "paramErr — parámetros inválidos"
-        default:    return "código \(status)"
+        case -9878: return "eventHotKeyExistsErr — the shortcut is already in use by another app"
+        case -50:   return "paramErr — invalid parameters"
+        default:    return "code \(status)"
         }
     }
 

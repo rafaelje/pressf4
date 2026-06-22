@@ -29,8 +29,8 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>PressF4 necesita acceso a la grabación de pantalla para tomar capturas del área seleccionada.</string>
+    <string>PressF4 needs Screen Recording access to capture the selected area.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>PressF4 necesita enviar eventos para activar la ventana del editor.</string>
+    <string>PressF4 needs to send events to activate the editor window.</string>
 </dict>
 </plist>

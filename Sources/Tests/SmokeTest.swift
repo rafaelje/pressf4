@@ -50,13 +50,13 @@ struct SmokeTestMain {
                        color: .blue, stroke: 4),
             Annotation(kind: .text,
                        rect: CGRect(x: 0, y: 0, width: 100, height: 20),
-                       color: .black, stroke: 1, text: "Hola")
+                       color: .black, stroke: 1, text: "Hello")
         ])
         let data = try! JSONEncoder().encode(layer)
         let back = try! JSONDecoder().decode(AnnotationLayer.self, from: data)
         check(back.annotations.count == 3, "3 annotations preserved")
         check(back.annotations[0].kind == .rectangle, "kind preserved")
-        check(back.annotations[2].text == "Hola", "text preserved")
+        check(back.annotations[2].text == "Hello", "text preserved")
         check(back.annotations[0].rect.width == 100, "rect dims preserved")
     }
 

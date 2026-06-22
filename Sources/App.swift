@@ -37,14 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        addMenuItem(menu, title: "Capturar área   F4",
+        addMenuItem(menu, title: "Capture Area   F4",
                     action: #selector(AppController.menuCapture))
-        addMenuItem(menu, title: "Mostrar ventana   ⌃⌥⌘H",
+        addMenuItem(menu, title: "Show Window   ⌃⌥⌘H",
                     action: #selector(AppController.menuShowWindow))
-        addMenuItem(menu, title: "Abrir última captura   ⌃⌥⌘E",
+        addMenuItem(menu, title: "Open Latest Capture   ⌃⌥⌘E",
                     action: #selector(AppController.menuOpenLatest))
         menu.addItem(.separator())
-        addMenuItem(menu, title: "Salir",
+        addMenuItem(menu, title: "Quit",
                     action: #selector(AppController.menuQuit),
                     keyEquivalent: "q")
         item.menu = menu
@@ -165,7 +165,7 @@ final class AppController: NSObject {
 
     private func presentError(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "No se pudo tomar la captura"
+        alert.messageText = "Could not take the capture"
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
@@ -177,12 +177,12 @@ final class AppController: NSObject {
         guard !errors.isEmpty else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             let alert = NSAlert()
-            alert.messageText = "Algunos atajos no se pudieron registrar"
+            alert.messageText = "Some shortcuts could not be registered"
             let lines = errors.map { "• \($0.0.rawValue) (status \($0.1))" }.joined(separator: "\n")
             alert.informativeText = """
             \(lines)
 
-            Probable causa: otra app (CleanShot, Raycast, Loom, etc.) o el sistema ya está usando el atajo. Usa el ícono de la barra de menú mientras tanto, o cambia los atajos en Sources/Services/ShortcutsManager.swift.
+            Likely cause: another app (CleanShot, Raycast, Loom, etc.) or the system is already using the shortcut. Use the menu bar icon in the meantime, or change the shortcuts in Sources/Services/ShortcutsManager.swift.
             """
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
