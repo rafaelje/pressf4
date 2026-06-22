@@ -13,6 +13,16 @@ MIN_MACOS     := 14.0
 ARCH          := $(shell uname -m)
 TARGET        := $(ARCH)-apple-macos$(MIN_MACOS)
 
+# Prefer a stable signing identity (Apple Development cert) so TCC permissions
+# (Screen Recording, etc.) survive across rebuilds. Falls back to ad-hoc.
+SIGN_IDENTITY ?= $(shell security find-identity -p codesigning -v 2>/dev/null | awk '/Apple Development/ {print $$2; exit}')
+ifeq ($(strip $(SIGN_IDENTITY)),)
+SIGN_IDENTITY := -
+SIGN_LABEL    := ad-hoc (permissions reset every rebuild)
+else
+SIGN_LABEL    := Apple Development ($(SIGN_IDENTITY))
+endif
+
 BUILD_DIR     := build
 APP_BUNDLE    := $(BUILD_DIR)/$(APP_NAME).app
 CONTENTS      := $(APP_BUNDLE)/Contents
@@ -79,8 +89,8 @@ $(CONTENTS)/Info.plist: $(INFO_PLIST) | $(MACOS_DIR)
 	@echo "✓ Info.plist copied"
 
 sign: $(EXECUTABLE) $(ENTITLEMENTS)
-	@echo "→ Ad-hoc signing with entitlements…"
-	@codesign --force --deep --sign - \
+	@echo "→ Signing with $(SIGN_LABEL)…"
+	@codesign --force --deep --sign $(SIGN_IDENTITY) \
 	          --entitlements $(ENTITLEMENTS) \
 	          --options runtime \
 	          $(APP_BUNDLE)
@@ -103,7 +113,7 @@ install: build
 	@echo "✓ Installed to /Applications/$(APP_NAME).app"
 
 resign: $(ENTITLEMENTS)
-	@codesign --force --deep --sign - \
+	@codesign --force --deep --sign $(SIGN_IDENTITY) \
 	          --entitlements $(ENTITLEMENTS) \
 	          --options runtime \
 	          $(APP_BUNDLE)

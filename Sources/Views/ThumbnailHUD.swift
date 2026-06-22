@@ -1,21 +1,55 @@
 import AppKit
 import SwiftUI
 
+enum HUDCorner: String, CaseIterable {
+    case topLeft, topRight, bottomLeft, bottomRight
+
+    func origin(in visible: CGRect, panelSize: NSSize, margin: CGFloat) -> NSPoint {
+        switch self {
+        case .topLeft:
+            return NSPoint(x: visible.minX + margin,
+                           y: visible.maxY - panelSize.height - margin)
+        case .topRight:
+            return NSPoint(x: visible.maxX - panelSize.width - margin,
+                           y: visible.maxY - panelSize.height - margin)
+        case .bottomLeft:
+            return NSPoint(x: visible.minX + margin,
+                           y: visible.minY + margin)
+        case .bottomRight:
+            return NSPoint(x: visible.maxX - panelSize.width - margin,
+                           y: visible.minY + margin)
+        }
+    }
+}
+
 @MainActor
-final class ThumbnailHUDController {
+final class ThumbnailHUDController: ObservableObject {
     static let shared = ThumbnailHUDController()
 
+    private static let cornerKey = "pressf4.hud.corner"
+    private let panelSize = NSSize(width: 252, height: 208)
+    private let margin: CGFloat = 22
+
     private var window: NSWindow?
+
+    @Published var corner: HUDCorner = {
+        let raw = UserDefaults.standard.string(forKey: ThumbnailHUDController.cornerKey) ?? ""
+        return HUDCorner(rawValue: raw) ?? .bottomRight
+    }()
+
+    func setCorner(_ c: HUDCorner) {
+        guard corner != c else { return }
+        corner = c
+        UserDefaults.standard.set(c.rawValue, forKey: Self.cornerKey)
+        repositionWindow(animated: true)
+    }
 
     func present(capture: Capture, onOpen: @escaping () -> Void) {
         dismiss()
 
         guard let screen = NSScreen.main else { return }
-        let size = NSSize(width: 252, height: 208)
-        let margin: CGFloat = 22
-        let originX = screen.visibleFrame.maxX - size.width - margin
-        let originY = screen.visibleFrame.minY + margin
-        let rect = NSRect(x: originX, y: originY, width: size.width, height: size.height)
+        let origin = corner.origin(in: screen.visibleFrame, panelSize: panelSize, margin: margin)
+        let rect = NSRect(origin: origin, size: panelSize)
 
         let w = NSPanel(contentRect: rect,
                         styleMask: [.borderless, .nonactivatingPanel],
@@ -29,7 +63,8 @@ final class ThumbnailHUDController {
         w.isFloatingPanel = true
         w.becomesKeyOnlyIfNeeded = true
 
-        let view = ThumbnailHUDView(capture: capture,
+        let view = ThumbnailHUDView(controller: self,
+                                    capture: capture,
                                     onOpen: { [weak self] in
                                         self?.dismiss()
                                         onOpen()
@@ -42,7 +77,7 @@ final class ThumbnailHUDController {
                                         self?.dismiss()
                                     })
         let host = NSHostingView(rootView: view)
-        host.frame = NSRect(origin: .zero, size: size)
+        host.frame = NSRect(origin: .zero, size: panelSize)
         w.contentView = host
 
         w.alphaValue = 0
@@ -67,6 +102,23 @@ final class ThumbnailHUDController {
         })
     }
 
+    private func repositionWindow(animated: Bool) {
+        guard let w = window else { return }
+        let screen = w.screen ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        let origin = corner.origin(in: visible, panelSize: panelSize, margin: margin)
+        let newFrame = NSRect(origin: origin, size: panelSize)
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.28
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                w.animator().setFrame(newFrame, display: true)
+            }
+        } else {
+            w.setFrame(newFrame, display: true)
+        }
+    }
+
     static func copyToPasteboard(capture: Capture) {
         guard let image = LibraryStore.shared.loadImage(for: capture) else { return }
         let pb = NSPasteboard.general
@@ -76,6 +128,7 @@ final class ThumbnailHUDController {
 }
 
 private struct ThumbnailHUDView: View {
+    @ObservedObject var controller: ThumbnailHUDController
     let capture: Capture
     let onOpen: () -> Void
     let onCopy: () -> Void
@@ -98,6 +151,10 @@ private struct ThumbnailHUDView: View {
                 )
                 .shadow(color: .black.opacity(0.40), radius: 22, x: 0, y: 10)
         )
+        .overlay(alignment: .topLeading)     { cornerAnchor(.topLeft) }
+        .overlay(alignment: .topTrailing)    { cornerAnchor(.topRight) }
+        .overlay(alignment: .bottomLeading)  { cornerAnchor(.bottomLeft) }
+        .overlay(alignment: .bottomTrailing) { cornerAnchor(.bottomRight) }
         .onHover { hover = $0 }
     }
 
@@ -147,6 +204,53 @@ private struct ThumbnailHUDView: View {
             HUDIconButton(icon: "doc.on.doc", help: "Copy", action: onCopy)
         }
         .padding(.horizontal, 2)
+    }
+
+    private func cornerAnchor(_ c: HUDCorner) -> some View {
+        CornerAnchor(corner: c,
+                     isActive: controller.corner == c,
+                     showHint: hover) {
+            controller.setCorner(c)
+        }
+        .padding(4)
+    }
+}
+
+private struct CornerAnchor: View {
+    let corner: HUDCorner
+    let isActive: Bool
+    let showHint: Bool
+    let action: () -> Void
+
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(isActive
+                      ? Color.accentColor
+                      : Color.white.opacity(hover ? 0.5 : 0.18))
+                .overlay(
+                    Circle().strokeBorder(Color.black.opacity(0.25), lineWidth: 0.5)
+                )
+                .frame(width: 9, height: 9)
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .opacity(isActive ? 1.0 : (showHint ? 1.0 : 0.0))
+        .scaleEffect(hover ? 1.25 : 1.0)
+        .animation(.easeInOut(duration: 0.15), value: showHint)
+        .animation(.easeInOut(duration: 0.12), value: hover)
+        .onHover { hover = $0 }
+    }
+
+    private var label: String {
+        switch corner {
+        case .topLeft:     return "Move to top left"
+        case .topRight:    return "Move to top right"
+        case .bottomLeft:  return "Move to bottom left"
+        case .bottomRight: return "Move to bottom right"
+        }
     }
 }
 
