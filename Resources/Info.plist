@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>pressf4</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.rafaelje.pressf4</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>pressf4</string>
+    <key>CFBundleDisplayName</key>
+    <string>PressF4</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>PressF4 necesita acceso a la grabación de pantalla para tomar capturas del área seleccionada.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>PressF4 necesita enviar eventos para activar la ventana del editor.</string>
+</dict>
+</plist>
