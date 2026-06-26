@@ -287,6 +287,9 @@ final class EditorViewModel: ObservableObject {
         switch a.kind {
         case .rectangle, .select, .hand:
             ctx.stroke(r)
+        case .filledRectangle:
+            ctx.setFillColor(a.color.nsColor.cgColor)
+            ctx.fill(r)
         case .circle:
             ctx.strokeEllipse(in: r)
         case .arrow:

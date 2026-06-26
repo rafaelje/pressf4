@@ -66,13 +66,15 @@ struct EditorView: View {
 
             Divider().frame(height: 20).padding(.horizontal, 6)
 
-            HStack(spacing: 8) {
-                Image(systemName: "lineweight")
-                Slider(value: $vm.stroke, in: 1...10)
-                    .frame(width: 80)
-                Text("\(Int(vm.stroke)) px")
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(width: 38, alignment: .trailing)
+            if vm.tool != .filledRectangle {
+                HStack(spacing: 8) {
+                    Image(systemName: "lineweight")
+                    Slider(value: $vm.stroke, in: 1...10)
+                        .frame(width: 80)
+                    Text("\(Int(vm.stroke)) px")
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 38, alignment: .trailing)
+                }
             }
 
             Spacer()

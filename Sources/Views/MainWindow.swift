@@ -49,7 +49,8 @@ struct SidebarView: View {
                     ForEach(store.captures) { capture in
                         ThumbnailRow(
                             capture: capture,
-                            isSelected: store.selectedID == capture.id
+                            isSelected: store.selectedID == capture.id,
+                            onDelete: { store.delete(capture) }
                         )
                         .onTapGesture {
                             store.selectedID = capture.id
@@ -122,6 +123,8 @@ private struct ShortcutKey: View {
 struct ThumbnailRow: View {
     let capture: Capture
     let isSelected: Bool
+    let onDelete: () -> Void
+    @State private var hover = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -142,7 +145,10 @@ struct ThumbnailRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            Spacer()
+            Spacer(minLength: 4)
+            DeleteThumbnailButton(action: onDelete)
+                .opacity(hover ? 1 : 0)
+                .animation(.easeInOut(duration: 0.12), value: hover)
         }
         .padding(8)
         .background(
@@ -150,6 +156,7 @@ struct ThumbnailRow: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
         )
         .contentShape(Rectangle())
+        .onHover { hover = $0 }
     }
 
     private var thumbnail: some View {
@@ -161,6 +168,27 @@ struct ThumbnailRow: View {
                                startPoint: .top, endPoint: .bottom)
             }
         }
+    }
+}
+
+private struct DeleteThumbnailButton: View {
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(hover ? Color.red : Color.secondary)
+                .frame(width: 22, height: 22)
+                .background(
+                    Circle().fill(hover ? Color.red.opacity(0.12) : Color.secondary.opacity(0.10))
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .help("Delete capture")
     }
 }
 

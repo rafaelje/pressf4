@@ -22,10 +22,15 @@ struct AnnotationsOverlay: View {
     private func annotationView(for ann: Annotation) -> some View {
         let displayRect = scaledToDisplay(rect: ann.rect)
         let body = ZStack(alignment: .topLeading) {
-            shapePath(for: ann, displayRect: displayRect)
-                .stroke(ann.color.color,
-                        style: StrokeStyle(lineWidth: ann.stroke * scale,
-                                           lineCap: .round, lineJoin: .round))
+            if ann.kind == .filledRectangle {
+                shapePath(for: ann, displayRect: displayRect)
+                    .fill(ann.color.color)
+            } else {
+                shapePath(for: ann, displayRect: displayRect)
+                    .stroke(ann.color.color,
+                            style: StrokeStyle(lineWidth: ann.stroke * scale,
+                                               lineCap: .round, lineJoin: .round))
+            }
             if ann.kind == .text {
                 if vm.editingTextID == ann.id {
                     TextAnnotationEditor(vm: vm, ann: ann,
@@ -79,7 +84,7 @@ struct AnnotationsOverlay: View {
     private func annotationShape(kind: AnnotationTool, rect: CGRect) -> Path {
         var path = Path()
         switch kind {
-        case .rectangle, .select, .hand, .text:
+        case .rectangle, .filledRectangle, .select, .hand, .text:
             path.addRect(rect)
         case .circle:
             path.addEllipse(in: rect)
@@ -145,6 +150,9 @@ struct AnnotationsOverlay: View {
         } else if vm.tool == .arrow, let s = vm.dragStart, let e = vm.draftEnd {
             arrowPath(from: scaleImageToDisplay(s), to: scaleImageToDisplay(e))
                 .stroke(vm.color.color.opacity(0.85), style: stroke)
+        } else if vm.tool == .filledRectangle {
+            annotationShape(kind: vm.tool, rect: rect)
+                .fill(vm.color.color)
         } else {
             annotationShape(kind: vm.tool, rect: rect)
                 .stroke(vm.color.color.opacity(0.85), style: stroke)

@@ -53,6 +53,42 @@ final class AnnotationTests: XCTestCase {
         XCTAssertLessThan(red.b, 0.3)
     }
 
+    func testFilledRectangleRoundTripsThroughJSON() throws {
+        let layer = AnnotationLayer(annotations: [
+            Annotation(kind: .filledRectangle,
+                       rect: CGRect(x: 12, y: 24, width: 80, height: 40),
+                       color: .yellow, stroke: 3),
+        ])
+
+        let data = try JSONEncoder().encode(layer)
+        let decoded = try JSONDecoder().decode(AnnotationLayer.self, from: data)
+
+        XCTAssertEqual(decoded, layer)
+        XCTAssertEqual(decoded.annotations.first?.kind, .filledRectangle)
+    }
+
+    func testLegacyJSONWithoutFilledRectangleStillDecodes() throws {
+        // Encode a layer using only pre-existing tool cases — the on-disk shape
+        // a file written by an earlier app build would have — and confirm the
+        // decoder (which now also knows about `filledRectangle`) still accepts it.
+        let legacyLayer = AnnotationLayer(annotations: [
+            Annotation(kind: .rectangle,
+                       rect: CGRect(x: 10, y: 20, width: 30, height: 40),
+                       color: .red, stroke: 3),
+            Annotation(kind: .circle,
+                       rect: CGRect(x: 5, y: 5, width: 20, height: 20),
+                       color: .blue, stroke: 2),
+        ])
+        let data = try JSONEncoder().encode(legacyLayer)
+
+        let asString = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(asString.contains("filledRectangle"),
+                       "legacy fixture must not reference the new case")
+
+        let decoded = try JSONDecoder().decode(AnnotationLayer.self, from: data)
+        XCTAssertEqual(decoded, legacyLayer)
+    }
+
     func testColorRoundTripsThroughJSON() throws {
         let original = AnnotationColor(r: 0.42, g: 0.13, b: 0.77, a: 0.5)
 
