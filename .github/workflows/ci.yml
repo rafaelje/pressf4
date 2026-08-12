@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Validate bundle metadata
         run: |
           plutil -lint Resources/Info.plist
@@ -36,6 +38,8 @@ jobs:
           test -x build/pressf4.app/Contents/MacOS/pressf4
           test -f build/pressf4.app/Contents/Resources/AppIcon.icns
           codesign --verify --deep --strict --verbose=2 build/pressf4.app
+      - name: Build universal DMG
+        run: make SIGN_IDENTITY=- dmg
 
   codeql:
     name: CodeQL (Swift)
@@ -48,6 +52,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:

@@ -29,7 +29,7 @@ lipo -create \
   "$intel_build/pressf4.app/Contents/MacOS/pressf4" \
   -output "$universal_app/Contents/MacOS/pressf4"
 
-codesign --force --deep --sign "$signing_identity" \
+codesign --force --sign "$signing_identity" \
   --entitlements Resources/CapturaApp.entitlements \
   --options runtime \
   "$universal_app"
@@ -42,7 +42,7 @@ dmg_path="$release_dir/pressf4_${version}_universal.dmg"
 dmg_staging=$(mktemp -d "$project_root/build/pressf4-dmg.XXXXXX")
 trap 'rm -rf "$dmg_staging"' EXIT
 
-ditto "$universal_app" "$dmg_staging/PressF4.app"
+ditto "$universal_app" "$dmg_staging/pressf4.app"
 ln -s /Applications "$dmg_staging/Applications"
 rm -f "$dmg_path"
 

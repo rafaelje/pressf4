@@ -17,8 +17,14 @@ concurrency:
 jobs:
   prepare:
     name: Prepare release
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: macos-latest
+    timeout-minutes: 10
     outputs:
       commit: ${{ steps.release.outputs.commit }}
       publish: ${{ steps.release.outputs.publish }}
@@ -31,8 +37,11 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Validate release version
         id: release
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
@@ -41,7 +50,7 @@ jobs:
           fi
 
           tag="v${version}"
-          commit="${{ github.event.workflow_run.head_sha || github.sha }}"
+          commit="$HEAD_SHA"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "title=pressf4 $tag" >> "$GITHUB_OUTPUT"
@@ -70,6 +79,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
       - name: Configure Apple signing
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -101,6 +111,7 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security import "$certificate_path" -k "$keychain_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$certificate_path"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
 
           identity=$(security find-identity -v -p codesigning "$keychain_path" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
@@ -116,6 +127,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           values=("$APPLE_ID" "$APPLE_PASSWORD" "$APPLE_TEAM_ID")
           configured=0
@@ -128,7 +140,7 @@ jobs:
             exit 1
           fi
 
-          dmg="dist/pressf4_${{ needs.prepare.outputs.version }}_universal.dmg"
+          dmg="dist/pressf4_${RELEASE_VERSION}_universal.dmg"
           if (( configured == 0 )); then
             echo "Notarization was skipped because Apple notarization secrets are absent." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -149,8 +161,19 @@ jobs:
           spctl --assess --type open --context context:primary-signature -vv "$dmg"
       - name: Create checksum
         run: |
+          set -euo pipefail
+          if [[ ! -d dist ]]; then
+            echo "No dist/ directory was produced." >&2
+            exit 1
+          fi
           cd dist
-          shasum -a 256 *.dmg > SHA256SUMS.txt
+          shopt -s nullglob
+          dmgs=(*.dmg)
+          if (( ${#dmgs[@]} == 0 )); then
+            echo "No DMG was produced in dist/." >&2
+            exit 1
+          fi
+          shasum -a 256 "${dmgs[@]}" > SHA256SUMS.txt
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
@@ -168,6 +191,7 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_TITLE: ${{ needs.prepare.outputs.title }}
         run: |
@@ -177,6 +201,6 @@ jobs:
           fi
 
           gh release create "$RELEASE_TAG" dist/*.dmg dist/SHA256SUMS.txt \
-            --target "${{ needs.prepare.outputs.commit }}" \
+            --target "$RELEASE_COMMIT" \
             --title "$RELEASE_TITLE" \
             --generate-notes
