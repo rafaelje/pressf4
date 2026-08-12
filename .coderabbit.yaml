@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+    ignore_usernames:
+      - "dependabot[bot]"
+  path_instructions:
+    - path: "Sources/Services/**/*.swift"
+      instructions: |
+        Focus on macOS privacy permissions, ScreenCaptureKit resource cleanup,
+        global shortcut lifecycle, filesystem safety, and error handling.
+    - path: "Sources/Views/**/*.swift"
+      instructions: |
+        Focus on SwiftUI and AppKit lifecycle correctness, accessibility,
+        keyboard behavior, multi-display behavior, and UI state consistency.
+    - path: "Sources/Models/**/*.swift"
+      instructions: |
+        Require tests for behavior changes and verify Codable compatibility,
+        geometry edge cases, and undo/redo invariants.
+    - path: ".github/workflows/**"
+      instructions: |
+        Focus on least-privilege permissions, secret exposure, immutable
+        releases, exact commit builds, and artifact provenance.
+  tools:
+    swiftlint:
+      enabled: true
+
