@@ -37,8 +37,9 @@ APP_ICON      := Resources/AppIcon.icns
 
 CACHE_DIR     := $(abspath $(BUILD_DIR)/cache)
 MODULE_CACHE  := $(CACHE_DIR)/modules
+OPTIMIZATION  ?= -O
 
-SWIFT_FLAGS   := -O \
+SWIFT_FLAGS   := $(OPTIMIZATION) \
                  -target $(TARGET) \
                  -parse-as-library \
                  -module-cache-path $(MODULE_CACHE) \

@@ -60,7 +60,7 @@ jobs:
           languages: swift
           build-mode: manual
       - name: Build application
-        run: make ARCH=x86_64 SIGN_IDENTITY=-
+        run: make ARCH=x86_64 SIGN_IDENTITY=- OPTIMIZATION=-Onone
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
