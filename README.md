@@ -23,6 +23,7 @@ make          # compile, assemble .app, ad-hoc sign with entitlements
 make test     # XCTest suite over the pure model logic (wraps `swift test`)
 make run      # build + open the app
 make install  # copy to /Applications
+make dmg      # build a universal arm64 + x86_64 DMG in dist/
 make clean
 ```
 
@@ -33,6 +34,31 @@ root exposes only `Sources/Models/` as the library `PressF4Core`; the AppKit /
 ScreenCaptureKit / SwiftUI surface area lives in `Sources/Services` and
 `Sources/Views` and is built exclusively through the Makefile + `swiftc`. Tests
 live under `Tests/PressF4CoreTests/`, one `XCTestCase` per unit.
+
+## Releases
+
+Merges to `main` run the test and application build checks first. When CI passes,
+GitHub Actions reads `CFBundleShortVersionString` from `Resources/Info.plist` and
+publishes a universal macOS DMG only when the corresponding `v<version>` tag does
+not already exist. Existing release assets are never replaced.
+
+Before merging a release, update `CFBundleShortVersionString`. The bundle build
+number remains in `CFBundleVersion` and can be incremented independently.
+
+Without Apple credentials, the workflow produces an ad-hoc signed DMG that macOS
+users must approve in Privacy & Security. For normal distribution, configure these
+GitHub Actions secrets:
+
+- `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`.
+- `APPLE_CERTIFICATE_PASSWORD`: password used to export the `.p12`.
+- `KEYCHAIN_PASSWORD`: temporary CI keychain password.
+- `APPLE_ID`: Apple Developer account email.
+- `APPLE_PASSWORD`: app-specific password for that account.
+- `APPLE_TEAM_ID`: Apple Developer Team ID.
+
+With all six secrets present, the workflow signs the app and DMG, submits the DMG
+to Apple for notarization, staples the ticket, verifies it, publishes checksums,
+and records a GitHub artifact attestation.
 
 ## First launch — permissions
 

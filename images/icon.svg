@@ -1,9 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 174 174" width="174" height="174">
-  <rect width="174" height="174" fill="#F3F3F3"/>
-  <rect x="13" y="13" width="148" height="146" rx="6" ry="6"
-        fill="none" stroke="#5F5F5F" stroke-width="2"
-        stroke-dasharray="8 5"/>
-  <path d="M41 53 H81 V61 H50 V83 H79 V91 H50 V119 H41 Z" fill="#596973"/>
-  <path d="M126 53 V97 H135 V105 H126 V119 H117 V105 H85 L113 53 Z" fill="#586772"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="title description">
+  <title id="title">PressF4 app icon</title>
+  <desc id="description">A polished blue keycap with the characters F4 framed by capture corners.</desc>
+
+  <defs>
+    <linearGradient id="keycap" x1="170" y1="92" x2="866" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17386F"/>
+      <stop offset="0.48" stop-color="#1261B7"/>
+      <stop offset="1" stop-color="#0796C4"/>
+    </linearGradient>
+
+    <linearGradient id="face" x1="312" y1="302" x2="730" y2="724" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DDF8FF"/>
+    </linearGradient>
+
+    <linearGradient id="frame" x1="190" y1="218" x2="834" y2="806" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B8F4FF"/>
+      <stop offset="1" stop-color="#55DDF4"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(300 188) rotate(44) scale(690 610)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <clipPath id="keycapClip">
+      <rect x="64" y="52" width="896" height="896" rx="224"/>
+    </clipPath>
+
+    <filter id="keycapShadow" x="12" y="12" width="1000" height="1000" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#071A32" flood-opacity="0.30"/>
+    </filter>
+
+    <filter id="symbolShadow" x="210" y="264" width="680" height="500" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#052B59" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- The rounded keycap remains inside Apple's icon-safe area. -->
+  <g filter="url(#keycapShadow)">
+    <rect x="64" y="52" width="896" height="896" rx="224" fill="url(#keycap)"/>
+  </g>
+
+  <g clip-path="url(#keycapClip)">
+    <rect x="64" y="52" width="896" height="896" fill="url(#glow)"/>
+    <path d="M64 745C257 822 445 858 635 849C757 843 866 816 960 768V948H64V745Z" fill="#003B76" opacity="0.12"/>
+  </g>
+
+  <rect x="78" y="66" width="868" height="868" rx="210" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="4"/>
+
+  <!-- Capture-area corners: recognizable at large sizes, quiet at menu size. -->
+  <g fill="none" stroke="url(#frame)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity="0.78">
+    <path d="M312 218H224C205 218 190 233 190 252V340"/>
+    <path d="M712 218H800C819 218 834 233 834 252V340"/>
+    <path d="M190 684V772C190 791 205 806 224 806H312"/>
+    <path d="M834 684V772C834 791 819 806 800 806H712"/>
+  </g>
+
+  <!-- Custom vector lettering keeps F4 crisp and consistent on every Mac. -->
+  <g fill="url(#face)" filter="url(#symbolShadow)">
+    <path d="M260 718V306H505V400H371V475H489V568H371V718H260Z"/>
+    <path fill-rule="evenodd" d="M659 306L488 552V638H673V718H776V638H836V540H776V306H659ZM673 540H605L673 439V540Z"/>
+  </g>
 </svg>

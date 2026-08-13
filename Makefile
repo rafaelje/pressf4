@@ -56,7 +56,7 @@ export TMPDIR := $(CACHE_DIR)/tmp
 export CLANG_MODULE_CACHE_PATH := $(MODULE_CACHE)
 export SWIFT_MODULE_CACHE_PATH := $(MODULE_CACHE)
 
-.PHONY: all build run clean open install resign test icon
+.PHONY: all build run clean open install resign test icon dmg
 
 ICON_SVG      := images/icon.svg
 ICONSET_DIR   := images/AppIcon.iconset
@@ -65,6 +65,9 @@ all: build
 
 test:
 	@env -u TMPDIR -u CLANG_MODULE_CACHE_PATH -u SWIFT_MODULE_CACHE_PATH swift test
+
+dmg:
+	@./scripts/build-dmg.sh
 
 build: $(EXECUTABLE) $(CONTENTS)/Info.plist $(RES_DIR)/AppIcon.icns sign
 
