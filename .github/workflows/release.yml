@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: read # Check out the source commit to validate and build the release.
 
 concurrency:
   group: dmg-release-main
@@ -18,7 +18,7 @@ jobs:
   prepare:
     name: Prepare release
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main' &&
@@ -33,7 +33,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out tested commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
@@ -43,11 +43,7 @@ jobs:
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid CFBundleShortVersionString: $version" >&2
-            exit 1
-          fi
+          version=$(python3 scripts/check-version.py)
 
           tag="v${version}"
           commit="$HEAD_SHA"
@@ -64,22 +60,25 @@ jobs:
             echo "Preparing $tag from $commit." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  build-and-publish:
+  build-dmg:
     name: Universal macOS DMG
     needs: prepare
     if: needs.prepare.outputs.publish == 'true'
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read # Check out the source commit to validate and build the release.
+      id-token: write # Request the OIDC identity used to sign artifact attestations.
+      attestations: write # Store provenance attestations for the release artifacts.
     steps:
       - name: Check out tested commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
+      - name: Run model tests for manual releases
+        if: github.event_name == 'workflow_dispatch'
+        run: make test
       - name: Configure Apple signing
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -175,7 +174,7 @@ jobs:
           fi
           shasum -a 256 "${dmgs[@]}" > SHA256SUMS.txt
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pressf4-${{ needs.prepare.outputs.version }}-macos-universal
           path: |
@@ -185,12 +184,38 @@ jobs:
           retention-days: 30
           compression-level: 0
       - name: Attest release artifacts
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: dist/*
+      - name: Remove temporary signing credentials
+        if: always()
+        run: |
+          keychain_path="$RUNNER_TEMP/pressf4-signing.keychain-db"
+          if [[ -f "$keychain_path" ]]; then
+            security delete-keychain "$keychain_path"
+          fi
+          rm -f "$RUNNER_TEMP/pressf4-certificate.p12"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [prepare, build-dmg]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # Create the release tag and publish the DMG and checksums.
+    steps:
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: pressf4-${{ needs.prepare.outputs.version }}-macos-universal
+          path: dist
+      - name: Verify downloaded checksums
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS.txt
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_TITLE: ${{ needs.prepare.outputs.title }}
@@ -204,3 +229,6 @@ jobs:
             --target "$RELEASE_COMMIT" \
             --title "$RELEASE_TITLE" \
             --generate-notes
+
+          release_url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
+          echo "[Download $RELEASE_TITLE]($release_url)" >> "$GITHUB_STEP_SUMMARY"
