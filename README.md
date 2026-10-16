@@ -42,8 +42,23 @@ GitHub Actions reads `CFBundleShortVersionString` from `Resources/Info.plist` an
 publishes a universal macOS DMG only when the corresponding `v<version>` tag does
 not already exist. Existing release assets are never replaced.
 
-Before merging a release, update `CFBundleShortVersionString`. The bundle build
-number remains in `CFBundleVersion` and can be incremented independently.
+Like `polakapi`, every pull request must increase `CFBundleShortVersionString`
+above its base branch version. Use three numeric components (`X.Y.Z`, for example
+`0.1.1`). CI checks this automatically; check locally with:
+
+```bash
+python3 scripts/check-version.py --base origin/main
+```
+
+The bundle build number remains in `CFBundleVersion` and can be incremented
+independently. If another release merges first, update your PR's version again.
+
+The release workflow builds and verifies the DMG, uploads it as a workflow
+artifact, and then publishes it in a separate job after checking its SHA-256
+checksum. The run summary links to the resulting GitHub Release. Publication is
+limited to `main`; manual runs also execute `make test` before packaging. You can
+retry a failed release from Actions → Build and publish DMG release → Run workflow
+on `main`, provided its version tag does not already exist.
 
 Without Apple credentials, the workflow produces an ad-hoc signed DMG that macOS
 users must approve in Privacy & Security. For normal distribution, configure these
