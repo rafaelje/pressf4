@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: read # Check out the source commit to validate and build the release.
 
 concurrency:
   group: dmg-release-main
@@ -33,7 +33,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out tested commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
@@ -67,12 +67,12 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
-      contents: read
-      id-token: write
-      attestations: write
+      contents: read # Check out the source commit to validate and build the release.
+      id-token: write # Request the OIDC identity used to sign artifact attestations.
+      attestations: write # Store provenance attestations for the release artifacts.
     steps:
       - name: Check out tested commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
@@ -174,7 +174,7 @@ jobs:
           fi
           shasum -a 256 "${dmgs[@]}" > SHA256SUMS.txt
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pressf4-${{ needs.prepare.outputs.version }}-macos-universal
           path: |
@@ -184,7 +184,7 @@ jobs:
           retention-days: 30
           compression-level: 0
       - name: Attest release artifacts
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: dist/*
       - name: Remove temporary signing credentials
@@ -202,10 +202,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write # Create the release tag and publish the DMG and checksums.
     steps:
       - name: Download verified release artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: pressf4-${{ needs.prepare.outputs.version }}-macos-universal
           path: dist
