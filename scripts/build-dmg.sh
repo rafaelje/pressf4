@@ -4,11 +4,7 @@ set -euo pipefail
 project_root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$project_root"
 
-version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-  echo "Invalid CFBundleShortVersionString: $version" >&2
-  exit 1
-fi
+version=$(python3 scripts/check-version.py)
 
 release_dir=${RELEASE_DIR:-"$project_root/dist"}
 signing_identity=${SIGN_IDENTITY:--}
