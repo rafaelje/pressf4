@@ -48,15 +48,16 @@ SWIFT_FLAGS   := -O \
                  -framework ScreenCaptureKit \
                  -framework Carbon \
                  -framework UniformTypeIdentifiers \
-                 -framework CoreGraphics \
-                 -framework UserNotifications
+                 -framework Vision \
+                 -framework CoreImage \
+                 -framework CoreGraphics
 
 # Force xcrun / clang to use the writable build cache dir.
 export TMPDIR := $(CACHE_DIR)/tmp
 export CLANG_MODULE_CACHE_PATH := $(MODULE_CACHE)
 export SWIFT_MODULE_CACHE_PATH := $(MODULE_CACHE)
 
-.PHONY: all build run clean open install resign test icon dmg
+.PHONY: all build run clean open install resign test icon dmg sign check-signing
 
 ICON_SVG      := images/icon.svg
 ICONSET_DIR   := images/AppIcon.iconset
@@ -71,7 +72,7 @@ dmg:
 
 build: $(EXECUTABLE) $(CONTENTS)/Info.plist $(RES_DIR)/AppIcon.icns sign
 
-$(EXECUTABLE): $(SOURCES) | $(MACOS_DIR) $(CACHE_DIR)
+$(EXECUTABLE): $(SOURCES) | check-signing $(MACOS_DIR) $(CACHE_DIR)
 	@echo "→ Compiling $(APP_NAME) for $(TARGET)…"
 	@xcrun swiftc $(SWIFT_FLAGS) -o $@ $(SOURCES)
 	@echo "✓ Built $@"
@@ -90,7 +91,19 @@ $(RES_DIR)/AppIcon.icns: $(APP_ICON) | $(MACOS_DIR)
 	@cp $(APP_ICON) $@
 	@echo "✓ AppIcon.icns copied"
 
-sign: $(EXECUTABLE) $(ENTITLEMENTS)
+# A restricted shell may not see the signing certificate. Never silently replace
+# a stable signature with ad-hoc signing: that invalidates existing TCC grants.
+check-signing:
+	@if [ "$(SIGN_IDENTITY)" = "-" ] && [ -d "$(APP_BUNDLE)" ]; then \
+	    team=$$(codesign -dv "$(APP_BUNDLE)" 2>&1 | sed -n 's/^TeamIdentifier=//p'); \
+	    if [ -n "$$team" ] && [ "$$team" != "not set" ]; then \
+	        echo "✗ Refusing to replace the existing certificate signature with ad-hoc signing."; \
+	        echo "  Run make with access to your signing certificate/keychain."; \
+	        exit 1; \
+	    fi; \
+	fi
+
+sign: check-signing $(EXECUTABLE) $(ENTITLEMENTS)
 	@echo "→ Signing with $(SIGN_LABEL)…"
 	@codesign --force --deep --sign $(SIGN_IDENTITY) \
 	          --entitlements $(ENTITLEMENTS) \
@@ -114,7 +127,7 @@ install: build
 	@cp -R $(APP_BUNDLE) /Applications/
 	@echo "✓ Installed to /Applications/$(APP_NAME).app"
 
-resign: $(ENTITLEMENTS)
+resign: check-signing $(ENTITLEMENTS)
 	@codesign --force --deep --sign $(SIGN_IDENTITY) \
 	          --entitlements $(ENTITLEMENTS) \
 	          --options runtime \

@@ -35,4 +35,26 @@ final class CaptureTests: XCTestCase {
         XCTAssertTrue(c.displaySize.contains("MB"),
                       "got '\(c.displaySize)' for a 5 MB capture")
     }
+
+    func testRecoveredRebuildsEntryFromUUIDNamedPNG() throws {
+        let id = UUID()
+        let created = Date(timeIntervalSince1970: 1_700_000_000)
+        let c = try XCTUnwrap(Capture.recovered(imageFileName: "\(id.uuidString).png",
+                                                createdAt: created,
+                                                width: 800, height: 600, sizeBytes: 1234))
+
+        XCTAssertEqual(c.id, id)
+        XCTAssertEqual(c.annotationsFileName, "\(id.uuidString).json")
+        XCTAssertEqual(c.createdAt, created)
+        XCTAssertEqual(c.displayDims, "800×600")
+        XCTAssertEqual(c.sizeBytes, 1234)
+    }
+
+    func testRecoveredIgnoresFilesThatAreNotUUIDNamedPNGs() {
+        for name in ["screenshot.png", "\(UUID().uuidString).json", "index.json"] {
+            XCTAssertNil(Capture.recovered(imageFileName: name, createdAt: Date(),
+                                           width: 1, height: 1, sizeBytes: 0),
+                         "\(name) should not be recovered")
+        }
+    }
 }

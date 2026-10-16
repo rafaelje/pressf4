@@ -30,7 +30,7 @@ final class CaptureService {
 
         let content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(false,
+            content = try await SCShareableContent.excludingDesktopWindows(UserDefaults.standard.bool(forKey: "pressf4.hideDesktop"),
                                                                             onScreenWindowsOnly: true)
         } catch {
             if !CGPreflightScreenCaptureAccess() {
@@ -60,7 +60,7 @@ final class CaptureService {
         config.width = display.width
         config.height = display.height
         config.scalesToFit = false
-        config.showsCursor = false
+        config.showsCursor = UserDefaults.standard.bool(forKey: "pressf4.captureCursor")
         config.captureResolution = .best
         config.pixelFormat = kCVPixelFormatType_32BGRA
 
@@ -81,6 +81,28 @@ final class CaptureService {
             throw CaptureError.captureFailed("crop failed")
         }
         return cropped
+    }
+
+    func availableWindows() async throws -> [SCWindow] {
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionDenied }
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        return content.windows.filter {
+            $0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier &&
+            $0.windowLayer == 0 && $0.frame.width > 40 && $0.frame.height > 40
+        }.sorted { ($0.owningApplication?.applicationName ?? "") < ($1.owningApplication?.applicationName ?? "") }
+    }
+
+    func capture(window: SCWindow) async throws -> CGImage {
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionDenied }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let config = SCStreamConfiguration()
+        let scale = CGFloat(filter.pointPixelScale)
+        config.width = Int(filter.contentRect.width * scale)
+        config.height = Int(filter.contentRect.height * scale)
+        config.showsCursor = UserDefaults.standard.bool(forKey: "pressf4.captureCursor")
+        config.ignoreShadowsSingleWindow = true
+        config.captureResolution = .best
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
     /// Returns the global frame (top-left origin, points) for the SC display by matching to NSScreen.

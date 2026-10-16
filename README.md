@@ -30,7 +30,7 @@ make clean
 The binary lands at `build/pressf4.app`.
 
 `make test` delegates to SwiftPM (`swift test`). The `Package.swift` at the project
-root exposes only `Sources/Models/` as the library `PressF4Core`; the AppKit /
+root exposes only `Sources/Models/` (including bitmap rendering and stitching) as the library `PressF4Core`; the AppKit /
 ScreenCaptureKit / SwiftUI surface area lives in `Sources/Services` and
 `Sources/Views` and is built exclusively through the Makefile + `swiftc`. Tests
 live under `Tests/PressF4CoreTests/`, one `XCTestCase` per unit.
@@ -65,7 +65,6 @@ and records a GitHub artifact attestation.
 1. On the first capture attempt, macOS will prompt for **Screen Recording permission**.
    - Accept the prompt or go to *System Settings → Privacy & Security → Screen Recording* and enable "PressF4".
    - Reopen the app after granting permission.
-2. macOS will also ask for notification permission (optional — you can deny it).
 
 ## Default shortcuts
 
@@ -92,6 +91,35 @@ and records a GitHub artifact attestation.
 4. The capture is already copied to the clipboard automatically.
 5. In the editor: pick a tool (select, pan, rectangle, circle, arrow, text, freehand), color, thickness; drag to create; `⌫` removes the selected annotation; `⌘Z` undoes, `⇧⌘Z` redoes.
 6. `⌘C` copies with the annotations applied; `⌘S` saves to a file. Zoom with `⌘=` / `⌘-` / `⌘0`.
+
+## Local capture tools
+
+The **Capture** menu (also in the menu bar and sidebar) now offers:
+
+- Area, full screen, individual window, repeat last area, and a five-second delayed area capture.
+- **Capture Options**: pointer inclusion, hiding desktop windows/icons, fixed dimensions in screen points, and free/1:1/16:9/9:16/4:3 selection ratios. Hold Shift for a square.
+- **Import Image** for PNG, JPEG, TIFF and HEIC images.
+- **Scrolling Capture**: select only the scrolling content, excluding fixed headers. Scroll down in the source app with some overlap, click **Capture next frame**, inspect the suggested overlap (or adjust it), then **Add frame**. Repeat and **Finish**. It is a guided vertical stitcher, not automatic scrolling. Uncertain matches require manual inspection; images are limited to 100 megapixels and 32,768 pixels per side.
+
+The editor adds **Highlight**, numbered **Counter** markers, **Redact** (opaque black), **Pixelate**, **Blur**, and nondestructive **Crop**. Crop, annotations and presentation settings support undo/redo. Solid redaction is rendered last so later annotations cannot reveal it. Blur and pixelation are visual effects; use solid Redact for sensitive information.
+
+**Style & Export** provides five backgrounds plus transparent/original mode, padding, rounded corners, shadow, proportional output resizing, a saved local preset, and a live export preview. Drag the preview to another app for a flattened PNG. Save supports PNG, JPEG and TIFF (choose the extension in the save dialog).
+
+**Text / QR** recognizes text and QR payloads locally using Apple Vision. Results can be selected or copied; QR links are never opened automatically. **Pin** opens an always-on-top, resizable reference window with an opacity control.
+
+**Editable project → Save project** writes a `.pressf4.json` file containing the original PNG and editable layers. Reopen it with **Capture → Open Editable Project**. These projects contain the unredacted original; share a flattened image when concealing information. Normal clipboard, preview drag-out and HUD drag-out all flatten edits before sharing.
+
+### Record an animated GIF
+
+Choose **Capture → Record GIF…** (also available in the menu bar), drag to select an area, and use the three-second countdown to switch to the source app. Press **Stop recording**, or let recording stop automatically at 15 seconds. The floating panel shows a looping preview with **Save GIF…** and **Copy GIF**. Cancel or close the panel to discard the temporary recording; canceling the save dialog keeps the preview available.
+
+- Up to 10 FPS; output fits within 800 × 800 pixels without upscaling, preserving the selected area's aspect ratio.
+- No audio. The pointer follows **Capture Options → Include pointer**.
+- All PressF4 windows are excluded, including the recorder controls.
+- Unchanged screen frames are held for their actual duration. Frames are staged on disk and GIF encoding runs off the main thread.
+- GIFs are saved to your chosen location, separately from the screenshot library. Save before closing the preview. Copy requires a destination app that accepts animated GIF data.
+
+The cloud/hosting and collaboration features of CleanShot are outside this local implementation. MP4 recording and GIF timeline editing are not included.
 
 ## Where captures are stored
 

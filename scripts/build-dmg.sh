@@ -29,12 +29,19 @@ lipo -create \
   "$intel_build/pressf4.app/Contents/MacOS/pressf4" \
   -output "$universal_app/Contents/MacOS/pressf4"
 
-codesign --force --sign "$signing_identity" \
-  --entitlements Resources/CapturaApp.entitlements \
-  --options runtime \
-  "$universal_app"
+app_sign_args=(--force --sign "$signing_identity"
+  --entitlements Resources/CapturaApp.entitlements
+  --options runtime)
+# Notarization rejects signatures without a secure timestamp; ad-hoc ones can't carry one.
+if [[ "$signing_identity" != "-" ]]; then
+  app_sign_args+=(--timestamp)
+fi
+codesign "${app_sign_args[@]}" "$universal_app"
 
-lipo "$universal_app/Contents/MacOS/pressf4" -verify_arch arm64 x86_64
+# One arch per call: Xcode 27's lipo reads a second arch as another input file.
+for arch in arm64 x86_64; do
+  lipo "$universal_app/Contents/MacOS/pressf4" -verify_arch "$arch"
+done
 codesign --verify --deep --strict --verbose=2 "$universal_app"
 
 mkdir -p "$release_dir"

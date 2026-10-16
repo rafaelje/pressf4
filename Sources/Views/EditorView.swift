@@ -3,6 +3,7 @@ import AppKit
 
 struct EditorView: View {
     @ObservedObject var vm: EditorViewModel
+    @State private var showPresentation = false
     @State private var scrollController = CanvasScrollController()
 
     var body: some View {
@@ -15,6 +16,10 @@ struct EditorView: View {
         }
         .background(Color(nsColor: NSColor.windowBackgroundColor))
         .background(deleteShortcutHost)
+        .sheet(isPresented: $showPresentation) { PresentationEditor(vm: vm) }
+        .sheet(isPresented: Binding(get: { vm.recognizedText != nil }, set: { if !$0 { vm.recognizedText = nil } })) {
+            RecognitionResultView(text: vm.recognizedText ?? "")
+        }
     }
 
     private var deleteShortcutHost: some View {
@@ -30,25 +35,36 @@ struct EditorView: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 4) {
-            ForEach(AnnotationTool.allCases, id: \.self) { tool in
-                Button {
-                    vm.tool = tool
-                } label: {
-                    Image(systemName: tool.symbol)
-                        .frame(width: 28, height: 28)
-                        .background(vm.tool == tool
-                                    ? Color.accentColor.opacity(0.2)
-                                    : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(vm.tool == tool ? Color.accentColor : Color.primary)
-                }
-                .buttonStyle(.plain)
-                .help(tool.label)
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Menu { CaptureCommands() } label: { Label("Capture", systemImage: "camera") }
+                    .fixedSize()
+                Spacer()
+                Button { vm.recognizeText() } label: {
+                    Label(vm.recognitionBusy ? "Reading…" : "Text / QR", systemImage: "text.viewfinder")
+                }.disabled(vm.recognitionBusy)
+                Button { vm.pin() } label: { Label("Pin", systemImage: "pin") }
+                Button { showPresentation = true } label: { Label("Style & Export", systemImage: "slider.horizontal.3") }
+                Button("Copy") { vm.copyToPasteboard() }.keyboardShortcut("c", modifiers: .command)
+                Button("Save") { vm.saveAs() }.keyboardShortcut("s", modifiers: .command).buttonStyle(.borderedProminent)
             }
-
-            Divider().frame(height: 20).padding(.horizontal, 6)
-
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(AnnotationTool.allCases, id: \.self) { tool in
+                        Button { vm.tool = tool } label: {
+                            Image(systemName: tool.symbol)
+                                .frame(width: 30, height: 30)
+                                .background(vm.tool == tool ? Color.accentColor.opacity(0.2) : .clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                                .foregroundStyle(vm.tool == tool ? Color.accentColor : .primary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(tool.label)
+                        .accessibilityLabel(tool.label)
+                    }
+                }
+            }
+            HStack(spacing: 6) {
             ForEach(AnnotationColor.palette, id: \.self) { c in
                 Button {
                     vm.color = c
@@ -87,11 +103,7 @@ struct EditorView: View {
                 .help("Redo (⇧⌘Z)")
                 .buttonStyle(.bordered)
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-            Button("Copy") { vm.copyToPasteboard() }
-                .keyboardShortcut("c", modifiers: .command)
-            Button("Save") { vm.saveAs() }
-                .keyboardShortcut("s", modifiers: .command)
-                .buttonStyle(.borderedProminent)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -109,7 +121,7 @@ struct EditorView: View {
         GeometryReader { proxy in
             ZStack {
                 Color(nsColor: NSColor.underPageBackgroundColor)
-                if let img = LibraryStore.shared.loadImage(for: vm.capture) {
+                if let img = vm.previewImage {
                     let base = fitSize(image: img.size, into: proxy.size)
                     let displaySize = CGSize(
                         width: base.size.width * vm.zoom,
@@ -231,10 +243,16 @@ struct EditorView: View {
         HStack(spacing: 10) {
             Text("\(vm.tool.label) · \(Int(vm.stroke)) px")
                 .foregroundStyle(.secondary)
+            if vm.tool == .blur || vm.tool == .pixelate {
+                Text("Use Redact for sensitive content").foregroundStyle(.secondary)
+            }
             Text("•").foregroundStyle(.secondary)
             Text("\(vm.layer.annotations.count) annotation\(vm.layer.annotations.count == 1 ? "" : "s")")
                 .foregroundStyle(.secondary)
             Spacer()
+            if vm.layer.cropRect != nil {
+                Button("Reset crop") { vm.resetCrop() }.buttonStyle(.link)
+            }
             Text(vm.capture.displayDims)
                 .foregroundStyle(.secondary)
         }

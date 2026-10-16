@@ -4,7 +4,9 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class EditorViewModel: ObservableObject {
-    @Published var layer: AnnotationLayer
+    @Published var layer: AnnotationLayer {
+        didSet { cachedPreview = nil }
+    }
     @Published var tool: AnnotationTool = .rectangle
     @Published var color: AnnotationColor = .red
     @Published var stroke: Double = 3.0
@@ -20,7 +22,15 @@ final class EditorViewModel: ObservableObject {
     @Published var editingTextID: UUID?
 
     private(set) var capture: Capture
+    private var baseImage: NSImage? {
+        didSet { cachedPreview = nil }
+    }
+    private var cachedPreview: NSImage?
+    @Published var recognitionBusy = false
+    @Published var recognizedText: String?
+    @Published var statusMessage: String?
     private var history = LayerHistory<AnnotationLayer>()
+    private var saveFailureReported = false
     private var resizeAnchor: CGRect?
     private var resizeAnchorArrowStart: CGPoint?
     private var resizeAnchorArrowEnd: CGPoint?
@@ -32,12 +42,16 @@ final class EditorViewModel: ObservableObject {
 
     init(capture: Capture) {
         self.capture = capture
+        self.baseImage = LibraryStore.shared.loadImage(for: capture)
         self.layer = LibraryStore.shared.loadAnnotations(for: capture)
     }
 
     func reload(capture: Capture) {
         self.capture = capture
+        self.baseImage = LibraryStore.shared.loadImage(for: capture)
         self.layer = LibraryStore.shared.loadAnnotations(for: capture)
+        self.recognizedText = nil
+        self.statusMessage = nil
         self.selectedID = nil
         self.zoom = 1.0
         self.editingTextID = nil
@@ -109,7 +123,19 @@ final class EditorViewModel: ObservableObject {
     func commitDraft() {
         defer { dragStart = nil; draftRect = nil; draftEnd = nil; draftPoints = [] }
         guard var r = draftRect, let s = dragStart, let e = draftEnd else { return }
-        if tool == .text {
+        if tool == .crop {
+            guard let baseImage else { return }
+            r = r.intersection(CGRect(origin: .zero, size: baseImage.size)).integral
+            guard !r.isNull, r.width >= 4, r.height >= 4 else { return }
+            snapshot()
+            layer.cropRect = r
+            tool = .select
+            persist()
+            return
+        }
+        if tool == .counter {
+            r = CGRect(x: s.x - 18, y: s.y - 18, width: 36, height: 36)
+        } else if tool == .text {
             if r.width < 20 { r.size.width = 160 }
             if r.height < 20 { r.size.height = 30 }
         } else if tool == .freehand {
@@ -120,7 +146,7 @@ final class EditorViewModel: ObservableObject {
         snapshot()
         let kind: AnnotationTool = (tool == .select) ? .rectangle : tool
         let ann = Annotation(kind: kind, rect: r, color: color, stroke: stroke,
-                             text: tool == .text ? "" : nil,
+                             text: tool == .text ? "" : (tool == .counter ? String((layer.annotations.filter { $0.kind == .counter }.compactMap { Int($0.text ?? "") }.max() ?? 0) + 1) : nil),
                              arrowStart: tool == .arrow ? s : nil,
                              arrowEnd: tool == .arrow ? e : nil,
                              points: tool == .freehand ? draftPoints : nil)
@@ -250,84 +276,85 @@ final class EditorViewModel: ObservableObject {
     }
 
     private func persist() {
-        LibraryStore.shared.saveAnnotations(layer, for: capture)
+        do {
+            try LibraryStore.shared.saveAnnotations(layer, for: capture)
+            saveFailureReported = false
+        } catch {
+            NSLog("PressF4: failed to save annotations: \(error)")
+            // persist() runs on every edit; alert once per failure streak, and outside
+            // the gesture handler that triggered it.
+            guard !saveFailureReported else { return }
+            saveFailureReported = true
+            DispatchQueue.main.async {
+                AppController.shared.presentError(error, title: "Could not save annotations")
+            }
+        }
+    }
+
+    var previewImage: NSImage? {
+        if let cachedPreview { return cachedPreview }
+        guard let baseImage else { return nil }
+        let rendered = CaptureRenderer.render(base: baseImage, layer: layer, presentation: false)
+        cachedPreview = rendered
+        return rendered
     }
 
     func render() -> NSImage? {
-        Self.render(base: LibraryStore.shared.loadImage(for: capture),
-                    annotations: layer.annotations)
+        guard let baseImage else { return nil }
+        return CaptureRenderer.render(base: baseImage, layer: layer)
     }
 
     static func renderFlattened(for capture: Capture) -> NSImage? {
-        let base = LibraryStore.shared.loadImage(for: capture)
-        let annotations = LibraryStore.shared.loadAnnotations(for: capture).annotations
-        return render(base: base, annotations: annotations)
+        guard let base = LibraryStore.shared.loadImage(for: capture) else { return nil }
+        return CaptureRenderer.render(base: base, layer: LibraryStore.shared.loadAnnotations(for: capture))
     }
 
-    private static func render(base: NSImage?, annotations: [Annotation]) -> NSImage? {
-        guard let base else { return nil }
-        let size = base.size
-        return NSImage(size: size, flipped: true) { _ in
-            base.draw(in: NSRect(origin: .zero, size: size))
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return true }
-            for a in annotations {
-                drawAnnotation(a, in: ctx)
-            }
-            return true
-        }
+    func setPresentation(_ options: PresentationOptions) {
+        guard options != layer.presentation else { return }
+        snapshot()
+        layer.presentation = options
+        persist()
     }
 
-    private static func drawAnnotation(_ a: Annotation, in ctx: CGContext) {
-        ctx.saveGState()
-        ctx.setStrokeColor(a.color.cgColor)
-        ctx.setLineWidth(a.stroke)
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-        let r = a.rect
-        switch a.kind {
-        case .rectangle, .select, .hand:
-            ctx.stroke(r)
-        case .filledRectangle:
-            ctx.setFillColor(a.color.nsColor.cgColor)
-            ctx.fill(r)
-        case .circle:
-            ctx.strokeEllipse(in: r)
-        case .arrow:
-            let p1 = a.arrowStart ?? CGPoint(x: r.minX, y: r.minY)
-            let p2 = a.arrowEnd ?? CGPoint(x: r.maxX, y: r.maxY)
-            drawArrow(from: p1, to: p2, lineWidth: a.stroke, in: ctx)
-        case .text:
-            let text = a.text ?? "Text"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
-                .foregroundColor: a.color.nsColor
-            ]
-            (text as NSString).draw(at: CGPoint(x: r.minX, y: r.minY),
-                                     withAttributes: attrs)
-        case .freehand:
-            if let pts = a.points, pts.count > 1 {
-                ctx.beginPath()
-                ctx.move(to: pts[0])
-                for p in pts.dropFirst() { ctx.addLine(to: p) }
-                ctx.strokePath()
+    func resetCrop() {
+        snapshot()
+        layer.cropRect = nil
+        persist()
+    }
+
+    func pin() {
+        guard let image = render() else { return }
+        PinnedCaptureController.shared.present(image: image)
+    }
+
+    func recognizeText() {
+        guard !recognitionBusy, let image = render(),
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        recognitionBusy = true
+        let captureID = capture.id
+        Task {
+            defer { recognitionBusy = false }
+            do {
+                let result = try await TextRecognitionService.recognize(cg)
+                guard capture.id == captureID else { return }
+                recognizedText = result.isEmpty ? "No text or QR codes found." : result
+            } catch {
+                AppController.shared.presentError(error, title: "Could not recognize text")
             }
         }
-        ctx.restoreGState()
     }
 
-    private static func drawArrow(from a: CGPoint, to b: CGPoint, lineWidth: CGFloat, in ctx: CGContext) {
-        ctx.move(to: a)
-        ctx.addLine(to: b)
-        ctx.strokePath()
-        let angle = atan2(b.y - a.y, b.x - a.x)
-        let headLen = max(10, lineWidth * 5)
-        let left = CGPoint(x: b.x - headLen * cos(angle - .pi / 6),
-                           y: b.y - headLen * sin(angle - .pi / 6))
-        let right = CGPoint(x: b.x - headLen * cos(angle + .pi / 6),
-                            y: b.y - headLen * sin(angle + .pi / 6))
-        ctx.move(to: b); ctx.addLine(to: left)
-        ctx.move(to: b); ctx.addLine(to: right)
-        ctx.strokePath()
+    func dragProvider() -> NSItemProvider {
+        guard let image = render(), let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: .png, properties: [:]) else { return NSItemProvider() }
+        let provider = NSItemProvider()
+        provider.suggestedName = "capture.png"
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(data, nil)
+            return nil
+        }
+        return provider
     }
 
     func copyToPasteboard() {
@@ -342,17 +369,35 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    func saveProject() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "capture.pressf4.json"
+        panel.message = "Editable projects include the original image, including any hidden content. Use Save image to share a flattened result."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let png = try Data(contentsOf: LibraryStore.shared.imageURL(for: capture))
+            let document = EditableCaptureDocument(imagePNG: png, layer: layer)
+            try JSONEncoder().encode(document).write(to: url, options: .atomic)
+        } catch { AppController.shared.presentError(error, title: "Could not save project") }
+    }
+
     func saveAs() {
         guard let img = render() else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
+        panel.allowedContentTypes = [.png, .jpeg, .tiff]
+        panel.allowsOtherFileTypes = false
         panel.nameFieldStringValue = "capture-\(Int(Date().timeIntervalSince1970)).png"
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
             if let tiff = img.tiffRepresentation,
                let rep = NSBitmapImageRep(data: tiff),
-               let data = rep.representation(using: .png, properties: [:]) {
-                try? data.write(to: url)
+               let data = rep.representation(using: url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" ? .jpeg : (url.pathExtension.lowercased() == "tiff" || url.pathExtension.lowercased() == "tif" ? .tiff : .png), properties: [.compressionFactor: 0.95]) {
+                do {
+                    try data.write(to: url)
+                } catch {
+                    AppController.shared.presentError(error, title: "Could not save the image")
+                }
             }
         }
     }
