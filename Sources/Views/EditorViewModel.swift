@@ -4,7 +4,9 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class EditorViewModel: ObservableObject {
-    @Published var layer: AnnotationLayer
+    @Published var layer: AnnotationLayer {
+        didSet { cachedPreview = nil }
+    }
     @Published var tool: AnnotationTool = .rectangle
     @Published var color: AnnotationColor = .red
     @Published var stroke: Double = 3.0
@@ -20,7 +22,10 @@ final class EditorViewModel: ObservableObject {
     @Published var editingTextID: UUID?
 
     private(set) var capture: Capture
-    private var baseImage: NSImage?
+    private var baseImage: NSImage? {
+        didSet { cachedPreview = nil }
+    }
+    private var cachedPreview: NSImage?
     @Published var recognitionBusy = false
     @Published var recognizedText: String?
     @Published var statusMessage: String?
@@ -287,8 +292,11 @@ final class EditorViewModel: ObservableObject {
     }
 
     var previewImage: NSImage? {
+        if let cachedPreview { return cachedPreview }
         guard let baseImage else { return nil }
-        return CaptureRenderer.render(base: baseImage, layer: layer, presentation: false)
+        let rendered = CaptureRenderer.render(base: baseImage, layer: layer, presentation: false)
+        cachedPreview = rendered
+        return rendered
     }
 
     func render() -> NSImage? {

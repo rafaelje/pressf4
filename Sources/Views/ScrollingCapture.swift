@@ -75,15 +75,24 @@ final class ScrollingCaptureController: NSObject, ObservableObject, NSWindowDele
     }
 
     func updatePreview() {
-        guard let combined, let pending else { return }
-        preview = ImageStitcher.stitch(combined, pending, overlap: Int(overlap))
+        // Preview only the bottom frame and its join so slider work stays bounded
+        // as the capture grows, while preserving the actual pixels at the seam.
+        guard let combined, let previous, let pending,
+              let bottom = combined.cropping(to: CGRect(x: 0, y: combined.height - previous.height,
+                                                        width: combined.width, height: previous.height)) else { return }
+        preview = ImageStitcher.stitch(bottom, pending, overlap: Int(overlap))
         if preview == nil { message = "The image is too large. Finish this capture and start another." }
     }
 
     func addFrame() {
-        guard let pending, let preview,
-              let cg = preview.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        combined = cg
+        guard !busy, let combined, let pending else { return }
+        guard let stitched = ImageStitcher.stitch(combined, pending, overlap: Int(overlap)),
+              let cg = stitched.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            message = "The image is too large. Discard this frame and finish the capture."
+            return
+        }
+        self.combined = cg
+        preview = stitched
         previous = pending
         self.pending = nil
         frameCount += 1

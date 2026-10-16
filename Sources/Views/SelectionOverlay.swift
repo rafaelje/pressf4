@@ -9,8 +9,10 @@ final class SelectionOverlayController {
 
     private var windows: [SelectionWindow] = []
 
-    func begin(onComplete: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
-        guard windows.isEmpty else { return }
+    /// Returns whether a selection overlay was opened; rejected requests do not invoke callbacks.
+    @discardableResult
+    func begin(onComplete: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) -> Bool {
+        guard windows.isEmpty, !NSScreen.screens.isEmpty else { return false }
 
         let completion: (CGRect?) -> Void = { [weak self] rect in
             self?.dismiss()
@@ -24,6 +26,7 @@ final class SelectionOverlayController {
         }
 
         NSApp.activate(ignoringOtherApps: true)
+        return true
     }
 
     private func dismiss() {

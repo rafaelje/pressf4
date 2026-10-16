@@ -127,7 +127,11 @@ final class LibraryStore: ObservableObject {
         }
         captures = remaining
         if selectedID == capture.id { selectedID = captures.first?.id }
-        try removeIfPresent(annotationsURL(for: capture))
+        do {
+            try removeIfPresent(annotationsURL(for: capture))
+        } catch {
+            NSLog("PressF4: failed to remove annotations for deleted capture: \(error)")
+        }
     }
 
     private func removeIfPresent(_ url: URL) throws {

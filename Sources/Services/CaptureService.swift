@@ -84,6 +84,7 @@ final class CaptureService {
     }
 
     func availableWindows() async throws -> [SCWindow] {
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionDenied }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         return content.windows.filter {
             $0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier &&
@@ -92,6 +93,7 @@ final class CaptureService {
     }
 
     func capture(window: SCWindow) async throws -> CGImage {
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionDenied }
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()
         let scale = CGFloat(filter.pointPixelScale)

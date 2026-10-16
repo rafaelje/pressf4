@@ -118,6 +118,11 @@ final class AppController: NSObject {
         guard !captureBusy else { return }
         captureBusy = true
         defer { captureBusy = false }
+        await performCapture(rect)
+    }
+
+    /// Performs a capture while the caller holds the captureBusy reservation.
+    private func performCapture(_ rect: CGRect) async {
         do {
             let cg = try await CaptureService.shared.capture(rectGlobal: rect)
             lastRect = rect
@@ -150,14 +155,17 @@ final class AppController: NSObject {
 
     func captureAfterDelay() {
         guard !captureBusy else { return }
-        SelectionOverlayController.shared.begin(onComplete: { rect in
-            self.captureBusy = true
+        captureBusy = true
+        let opened = SelectionOverlayController.shared.begin(onComplete: { rect in
             Task {
-                try? await Task.sleep(for: .seconds(5))
-                self.captureBusy = false
-                await self.handleSelection(rect)
+                defer { self.captureBusy = false }
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch { return }
+                await self.performCapture(rect)
             }
-        }, onCancel: {})
+        }, onCancel: { self.captureBusy = false })
+        if !opened { captureBusy = false }
     }
 
     func captureWindow() {
