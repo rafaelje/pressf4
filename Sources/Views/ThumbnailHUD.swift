@@ -209,8 +209,7 @@ private struct ThumbnailHUDView: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onOpen)
                 .onDrag {
-                    let url = LibraryStore.shared.imageURL(for: capture)
-                    return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+                    EditorViewModel(capture: capture).dragProvider()
                 }
 
             CloseButton(action: onClose)
@@ -229,6 +228,11 @@ private struct ThumbnailHUDView: View {
 
             Spacer()
 
+            HUDIconButton(icon: "pin", help: "Pin") {
+                if let image = EditorViewModel.renderFlattened(for: capture) {
+                    PinnedCaptureController.shared.present(image: image)
+                }
+            }
             HUDIconButton(icon: "pencil", help: "Edit", action: onOpen)
             HUDIconButton(icon: "doc.on.doc", help: "Copy", action: onCopy)
         }

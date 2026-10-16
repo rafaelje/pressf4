@@ -1,7 +1,18 @@
 import Foundation
 import AppKit
 import Combine
+import ImageIO
 import UniformTypeIdentifiers
+
+enum LibraryError: Error, LocalizedError {
+    case pngEncodingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .pngEncodingFailed: return "The capture could not be encoded as PNG."
+        }
+    }
+}
 
 @MainActor
 final class LibraryStore: ObservableObject {
@@ -50,25 +61,19 @@ final class LibraryStore: ObservableObject {
         return layer
     }
 
-    func saveAnnotations(_ layer: AnnotationLayer, for capture: Capture) {
-        let url = annotationsURL(for: capture)
+    func saveAnnotations(_ layer: AnnotationLayer, for capture: Capture) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted]
-        if let data = try? encoder.encode(layer) {
-            try? data.write(to: url, options: .atomic)
-        }
+        try encoder.encode(layer).write(to: annotationsURL(for: capture), options: .atomic)
     }
 
-    @discardableResult
-    func add(image: CGImage) -> Capture? {
+    func add(image: CGImage) throws -> Capture {
         let id = UUID()
         let imageName = "\(id.uuidString).png"
         let annoName = "\(id.uuidString).json"
         let imgURL = storageURL.appendingPathComponent(imageName)
 
-        guard writePNG(image, to: imgURL) else {
-            return nil
-        }
+        try writePNG(image, to: imgURL)
 
         let attrs = try? fileManager.attributesOfItem(atPath: imgURL.path)
         let size = (attrs?[.size] as? Int) ?? 0
@@ -82,28 +87,55 @@ final class LibraryStore: ObservableObject {
             height: image.height,
             sizeBytes: size
         )
-        saveAnnotations(AnnotationLayer(), for: capture)
-        captures.insert(capture, at: 0)
+        let updated = [capture] + captures
+        do {
+            try saveAnnotations(AnnotationLayer(), for: capture)
+            try writeIndex(updated)
+        } catch {
+            // Leave nothing behind, or load() would resurrect a capture the user was told failed.
+            try? fileManager.removeItem(at: imgURL)
+            try? fileManager.removeItem(at: annotationsURL(for: capture))
+            throw error
+        }
+        captures = updated
         selectedID = capture.id
-        persistIndex()
         return capture
     }
 
-    func update(_ capture: Capture) {
-        if let idx = captures.firstIndex(where: { $0.id == capture.id }) {
-            captures[idx] = capture
-            persistIndex()
-        }
+    func update(_ capture: Capture) throws {
+        guard let idx = captures.firstIndex(where: { $0.id == capture.id }) else { return }
+        var updated = captures
+        updated[idx] = capture
+        try writeIndex(updated)
+        captures = updated
     }
 
-    func delete(_ capture: Capture) {
-        let imgURL = imageURL(for: capture)
-        let annoURL = annotationsURL(for: capture)
-        try? fileManager.removeItem(at: imgURL)
-        try? fileManager.removeItem(at: annoURL)
-        captures.removeAll { $0.id == capture.id }
+    func delete(_ capture: Capture) throws {
+        let remaining = captures.filter { $0.id != capture.id }
+        try writeIndex(remaining)
+        do {
+            try removeIfPresent(imageURL(for: capture))
+        } catch {
+            // Keep the capture visible when its image could not be deleted.
+            // If restoring the index fails, load() can recover the remaining PNG.
+            do {
+                try writeIndex(captures)
+            } catch {
+                NSLog("PressF4: failed to restore index after deletion failure: \(error)")
+            }
+            throw error
+        }
+        captures = remaining
         if selectedID == capture.id { selectedID = captures.first?.id }
-        persistIndex()
+        try removeIfPresent(annotationsURL(for: capture))
+    }
+
+    private func removeIfPresent(_ url: URL) throws {
+        do {
+            try fileManager.removeItem(at: url)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            // Already absent is a successful deletion.
+        }
     }
 
     func revealInFinder(_ capture: Capture) {
@@ -116,32 +148,76 @@ final class LibraryStore: ObservableObject {
 
     var latest: Capture? { captures.first }
 
-    private func writePNG(_ image: CGImage, to url: URL) -> Bool {
+    private func writePNG(_ image: CGImage, to url: URL) throws {
         let rep = NSBitmapImageRep(cgImage: image)
-        guard let data = rep.representation(using: .png, properties: [:]) else { return false }
-        do {
-            try data.write(to: url, options: .atomic)
-            return true
-        } catch {
-            NSLog("PressF4: failed to write PNG: \(error)")
-            return false
+        guard let data = rep.representation(using: .png, properties: [:]) else {
+            throw LibraryError.pngEncodingFailed
         }
+        try data.write(to: url, options: .atomic)
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: indexURL),
-              let list = try? JSONDecoder().decode([Capture].self, from: data) else {
-            return
+        var list: [Capture] = []
+        if fileManager.fileExists(atPath: indexURL.path) {
+            do {
+                list = try JSONDecoder().decode([Capture].self, from: Data(contentsOf: indexURL))
+            } catch {
+                NSLog("PressF4: index.json is unreadable, rebuilding it from disk: \(error)")
+                backUpUnreadableIndex()
+            }
         }
-        captures = list.sorted { $0.createdAt > $1.createdAt }
+
+        let recovered = recoverUnindexedCaptures(excluding: Set(list.map(\.imageFileName)))
+        captures = (list + recovered).sorted { $0.createdAt > $1.createdAt }
         selectedID = captures.first?.id
+
+        guard !recovered.isEmpty else { return }
+        NSLog("PressF4: recovered \(recovered.count) capture(s) missing from index.json")
+        do {
+            try writeIndex(captures)
+        } catch {
+            NSLog("PressF4: failed to rewrite index.json: \(error)")
+        }
     }
 
-    private func persistIndex() {
+    /// Keeps a copy of an index that failed to decode before the next write replaces it.
+    private func backUpUnreadableIndex() {
+        let name = "index.unreadable-\(Int(Date().timeIntervalSince1970)).json"
+        do {
+            try fileManager.copyItem(at: indexURL, to: storageURL.appendingPathComponent(name))
+        } catch {
+            NSLog("PressF4: failed to back up unreadable index.json: \(error)")
+        }
+    }
+
+    /// Entries for `<uuid>.png` files in the storage folder that the index doesn't list.
+    private func recoverUnindexedCaptures(excluding indexed: Set<String>) -> [Capture] {
+        let keys: Set<URLResourceKey> = [.creationDateKey, .fileSizeKey]
+        guard let files = try? fileManager.contentsOfDirectory(at: storageURL,
+                                                                includingPropertiesForKeys: Array(keys)) else {
+            return []
+        }
+        return files.compactMap { url in
+            guard url.pathExtension.lowercased() == "png",
+                  !indexed.contains(url.lastPathComponent),
+                  let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let width = props[kCGImagePropertyPixelWidth] as? Int,
+                  let height = props[kCGImagePropertyPixelHeight] as? Int else {
+                return nil
+            }
+            let values = try? url.resourceValues(forKeys: keys)
+            return Capture.recovered(imageFileName: url.lastPathComponent,
+                                     createdAt: values?.creationDate ?? Date(),
+                                     width: width,
+                                     height: height,
+                                     sizeBytes: values?.fileSize ?? 0)
+        }
+    }
+
+    private func writeIndex(_ list: [Capture]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted]
-        if let data = try? encoder.encode(captures) {
-            try? data.write(to: indexURL, options: .atomic)
-        }
+        try encoder.encode(list).write(to: indexURL, options: .atomic)
     }
 }

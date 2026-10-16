@@ -95,6 +95,7 @@ final class SelectionView: NSView {
     private var startPoint: NSPoint?
     private var currentPoint: NSPoint?
     private var trackingArea: NSTrackingArea?
+    private var squareSelection = false
 
     private let dimColor   = NSColor(white: 0, alpha: 0.35)
     private let strokeColor = NSColor.white
@@ -133,6 +134,7 @@ final class SelectionView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        squareSelection = event.modifierFlags.contains(.shift)
         currentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
@@ -157,10 +159,20 @@ final class SelectionView: NSView {
     }
 
     private func normalize(_ a: NSPoint, _ b: NSPoint) -> NSRect {
-        NSRect(x: min(a.x, b.x),
-               y: min(a.y, b.y),
-               width: abs(a.x - b.x),
-               height: abs(a.y - b.y))
+        let fixedWidth = UserDefaults.standard.integer(forKey: "pressf4.fixedCaptureWidth")
+        let fixedHeight = UserDefaults.standard.integer(forKey: "pressf4.fixedCaptureHeight")
+        if fixedWidth > 0 && fixedHeight > 0 {
+            let width = min(CGFloat(fixedWidth), bounds.width)
+            let height = min(CGFloat(fixedHeight), bounds.height)
+            return CGRect(x: min(a.x, bounds.width - width), y: max(0, a.y - height), width: width, height: height)
+        }
+        let aspect = squareSelection ? 1.0 : UserDefaults.standard.double(forKey: "pressf4.captureAspect")
+        var end = b
+        if aspect > 0 {
+            let w = min(abs(b.x - a.x), abs(b.y - a.y) * aspect)
+            end = CGPoint(x: a.x + (b.x >= a.x ? w : -w), y: a.y + (b.y >= a.y ? w / aspect : -w / aspect))
+        }
+        return NSRect(x: min(a.x, end.x), y: min(a.y, end.y), width: abs(a.x - end.x), height: abs(a.y - end.y))
     }
 
     /// Convert a rect in this view's local coordinates (bottom-left origin, points relative to its screen)
@@ -171,7 +183,7 @@ final class SelectionView: NSView {
                                       y: screenFrame.origin.y + local.origin.y,
                                       width: local.width,
                                       height: local.height)
-        guard let primary = NSScreen.screens.first else { return globalBottomLeft }
+        guard let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first else { return globalBottomLeft }
         let topY = primary.frame.height - globalBottomLeft.origin.y - globalBottomLeft.height
         return CGRect(x: globalBottomLeft.origin.x, y: topY,
                       width: globalBottomLeft.width, height: globalBottomLeft.height)

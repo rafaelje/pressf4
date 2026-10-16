@@ -11,6 +11,18 @@ struct AnnotationsOverlay: View {
                 annotationView(for: ann)
             }
 
+            if let crop = vm.layer.cropRect {
+                Path { path in
+                    path.addRect(CGRect(origin: .zero, size: displaySize))
+                    path.addRect(scaledToDisplay(rect: crop))
+                }.fill(Color.black.opacity(0.4), style: FillStyle(eoFill: true))
+                    .allowsHitTesting(false)
+                Rectangle().strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .frame(width: crop.width * scale, height: crop.height * scale)
+                    .position(x: crop.midX * scale, y: crop.midY * scale)
+                    .allowsHitTesting(false)
+            }
+
             if let draft = vm.draftRect {
                 draftShape(rect: scaledToDisplay(rect: draft))
             }
@@ -22,34 +34,16 @@ struct AnnotationsOverlay: View {
     private func annotationView(for ann: Annotation) -> some View {
         let displayRect = scaledToDisplay(rect: ann.rect)
         let body = ZStack(alignment: .topLeading) {
-            if ann.kind == .filledRectangle {
-                shapePath(for: ann, displayRect: displayRect)
-                    .fill(ann.color.color)
-            } else {
-                shapePath(for: ann, displayRect: displayRect)
-                    .stroke(ann.color.color,
-                            style: StrokeStyle(lineWidth: ann.stroke * scale,
-                                               lineCap: .round, lineJoin: .round))
-            }
-            if ann.kind == .text {
-                if vm.editingTextID == ann.id {
-                    TextAnnotationEditor(vm: vm, ann: ann,
-                                         displayRect: displayRect, scale: scale)
-                } else {
-                    Text(ann.text?.isEmpty == false ? ann.text! : "Text")
-                        .font(.system(size: 18 * scale, weight: .semibold))
-                        .foregroundStyle(ann.color.color)
-                        .frame(width: displayRect.width, height: displayRect.height,
-                               alignment: .topLeading)
-                        .position(x: displayRect.midX, y: displayRect.midY)
-                        .onTapGesture(count: 2) { vm.startEditingText(ann.id) }
-                }
+            Color.clear
+            if ann.kind == .text && vm.editingTextID == ann.id {
+                TextAnnotationEditor(vm: vm, ann: ann, displayRect: displayRect, scale: scale)
             }
             if vm.selectedID == ann.id && vm.editingTextID != ann.id {
                 selectionHandles(for: ann, displayRect: displayRect)
             }
         }
         .contentShape(Rectangle().path(in: displayRect.insetBy(dx: -8, dy: -8)))
+        .onTapGesture(count: 2) { if ann.kind == .text { vm.startEditingText(ann.id) } }
         .onTapGesture { vm.select(ann.id) }
 
         if vm.tool == .select && vm.editingTextID != ann.id {
@@ -84,13 +78,13 @@ struct AnnotationsOverlay: View {
     private func annotationShape(kind: AnnotationTool, rect: CGRect) -> Path {
         var path = Path()
         switch kind {
-        case .rectangle, .filledRectangle, .select, .hand, .text:
+        case .rectangle, .filledRectangle, .select, .hand, .text, .highlight, .redact, .pixelate, .blur, .crop:
             path.addRect(rect)
-        case .circle:
+        case .circle, .counter:
             path.addEllipse(in: rect)
         case .arrow:
             path = arrowPath(from: CGPoint(x: rect.minX, y: rect.minY),
-                             to: CGPoint(x: rect.maxX, y: rect.maxY))
+                             to: CGPoint(x: rect.maxX, y: rect.maxY), stroke: vm.stroke)
         case .freehand:
             break
         }
@@ -104,7 +98,7 @@ struct AnnotationsOverlay: View {
                     ?? CGPoint(x: displayRect.minX, y: displayRect.minY)
             let e = ann.arrowEnd.map(scaleImageToDisplay)
                     ?? CGPoint(x: displayRect.maxX, y: displayRect.maxY)
-            return arrowPath(from: s, to: e)
+            return arrowPath(from: s, to: e, stroke: ann.stroke)
         case .freehand:
             guard let pts = ann.points, pts.count > 1 else { return Path() }
             var path = Path()
@@ -121,7 +115,7 @@ struct AnnotationsOverlay: View {
         CGPoint(x: p.x * scale, y: p.y * scale)
     }
 
-    private func arrowPath(from a: CGPoint, to b: CGPoint) -> Path {
+    private func arrowPath(from a: CGPoint, to b: CGPoint, stroke: Double) -> Path {
         var path = Path()
         path.move(to: a)
         path.addLine(to: b)
@@ -129,7 +123,7 @@ struct AnnotationsOverlay: View {
         let dy = b.y - a.y
         guard dx != 0 || dy != 0 else { return path }
         let angle = atan2(dy, dx)
-        let headLen: CGFloat = 14
+        let headLen = max(10, stroke * 5) * scale
         let left = CGPoint(x: b.x - headLen * cos(angle - .pi/6),
                            y: b.y - headLen * sin(angle - .pi/6))
         let right = CGPoint(x: b.x - headLen * cos(angle + .pi/6),
@@ -148,7 +142,7 @@ struct AnnotationsOverlay: View {
                         style: StrokeStyle(lineWidth: vm.stroke * scale,
                                            lineCap: .round, lineJoin: .round))
         } else if vm.tool == .arrow, let s = vm.dragStart, let e = vm.draftEnd {
-            arrowPath(from: scaleImageToDisplay(s), to: scaleImageToDisplay(e))
+            arrowPath(from: scaleImageToDisplay(s), to: scaleImageToDisplay(e), stroke: vm.stroke)
                 .stroke(vm.color.color.opacity(0.85), style: stroke)
         } else if vm.tool == .filledRectangle {
             annotationShape(kind: vm.tool, rect: rect)

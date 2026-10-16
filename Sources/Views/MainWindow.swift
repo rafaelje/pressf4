@@ -19,18 +19,18 @@ struct MainWindowView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(store: store, onSelect: { capture in
-                editorVM.reload(capture: capture)
-            })
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 320)
+            SidebarView(store: store)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 320)
         } detail: {
             if let selected = store.selected, !selected.imageFileName.isEmpty {
                 EditorView(vm: editorVM)
-                    .onChange(of: selected.id) {
-                        editorVM.reload(capture: selected)
-                    }
             } else {
                 EmptyState()
+            }
+        }
+        .onChange(of: store.selectedID, initial: true) {
+            if let selected = store.selected {
+                editorVM.reload(capture: selected)
             }
         }
         .navigationTitle(store.selected?.displayTime ?? "PressF4")
@@ -40,7 +40,6 @@ struct MainWindowView: View {
 
 struct SidebarView: View {
     @ObservedObject var store: LibraryStore
-    let onSelect: (Capture) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,16 +49,14 @@ struct SidebarView: View {
                         ThumbnailRow(
                             capture: capture,
                             isSelected: store.selectedID == capture.id,
-                            onDelete: { store.delete(capture) }
+                            onDelete: { delete(capture) }
                         )
                         .onTapGesture {
                             store.selectedID = capture.id
-                            onSelect(capture)
                         }
                         .contextMenu {
                             Button("Open") {
                                 store.selectedID = capture.id
-                                onSelect(capture)
                             }
                             Button("Copy to Clipboard") {
                                 ThumbnailHUDController.copyToPasteboard(capture: capture)
@@ -69,7 +66,7 @@ struct SidebarView: View {
                             }
                             Divider()
                             Button("Delete", role: .destructive) {
-                                store.delete(capture)
+                                delete(capture)
                             }
                         }
                     }
@@ -79,17 +76,12 @@ struct SidebarView: View {
 
             Divider().opacity(0.3)
 
-            Button {
-                AppController.shared.beginCapture()
+            Menu {
+                CaptureCommands()
             } label: {
-                VStack(spacing: 4) {
-                    Text("+ New Capture").font(.system(size: 12, weight: .medium))
-                    HStack(spacing: 2) {
-                        ShortcutKey("F4")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                Label("New Capture", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
             }
             .buttonStyle(.plain)
             .background(
@@ -99,6 +91,14 @@ struct SidebarView: View {
             )
         }
         .background(Color(nsColor: NSColor.controlBackgroundColor).opacity(0.5))
+    }
+
+    private func delete(_ capture: Capture) {
+        do {
+            try store.delete(capture)
+        } catch {
+            AppController.shared.presentError(error, title: "Could not delete the capture")
+        }
     }
 }
 

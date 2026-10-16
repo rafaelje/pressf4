@@ -4,6 +4,7 @@ import SwiftUI
 
 enum AnnotationTool: String, CaseIterable, Codable {
     case select, hand, rectangle, filledRectangle, circle, arrow, text, freehand
+    case highlight, counter, redact, pixelate, blur, crop
 
     var symbol: String {
         switch self {
@@ -15,6 +16,12 @@ enum AnnotationTool: String, CaseIterable, Codable {
         case .arrow: return "arrow.up.right"
         case .text: return "textformat"
         case .freehand: return "scribble.variable"
+        case .highlight: return "highlighter"
+        case .counter: return "1.circle"
+        case .redact: return "rectangle.fill"
+        case .pixelate: return "square.grid.3x3.fill"
+        case .blur: return "drop.halffull"
+        case .crop: return "crop"
         }
     }
 
@@ -28,6 +35,12 @@ enum AnnotationTool: String, CaseIterable, Codable {
         case .arrow: return "Arrow"
         case .text: return "Text"
         case .freehand: return "Draw"
+        case .highlight: return "Highlight"
+        case .counter: return "Counter"
+        case .redact: return "Redact"
+        case .pixelate: return "Pixelate"
+        case .blur: return "Blur"
+        case .crop: return "Crop"
         }
     }
 }
@@ -98,4 +111,6 @@ struct Annotation: Identifiable, Codable, Equatable, Hashable {
 
 struct AnnotationLayer: Codable, Equatable {
     var annotations: [Annotation] = []
+    var cropRect: CGRect?
+    var presentation: PresentationOptions?
 }
