@@ -109,7 +109,17 @@ The editor adds **Highlight**, numbered **Counter** markers, **Redact** (opaque 
 
 **Editable project → Save project** writes a `.pressf4.json` file containing the original PNG and editable layers. Reopen it with **Capture → Open Editable Project**. These projects contain the unredacted original; share a flattened image when concealing information. Normal clipboard, preview drag-out and HUD drag-out all flatten edits before sharing.
 
-The cloud/hosting and collaboration features of CleanShot are outside this local implementation. Screen recording is also outside the screenshots scope.
+### Record an animated GIF
+
+Choose **Capture → Record GIF…** (also available in the menu bar), drag to select an area, and use the three-second countdown to switch to the source app. Press **Stop recording**, or let recording stop automatically at 15 seconds. The floating panel shows a looping preview with **Save GIF…** and **Copy GIF**. Cancel or close the panel to discard the temporary recording; canceling the save dialog keeps the preview available.
+
+- Up to 10 FPS; output fits within 800 × 800 pixels without upscaling, preserving the selected area's aspect ratio.
+- No audio. The pointer follows **Capture Options → Include pointer**.
+- All PressF4 windows are excluded, including the recorder controls.
+- Unchanged screen frames are held for their actual duration. Frames are staged on disk and GIF encoding runs off the main thread.
+- GIFs are saved to your chosen location, separately from the screenshot library. Save before closing the preview. Copy requires a destination app that accepts animated GIF data.
+
+The cloud/hosting and collaboration features of CleanShot are outside this local implementation. MP4 recording and GIF timeline editing are not included.
 
 ## Where captures are stored
 

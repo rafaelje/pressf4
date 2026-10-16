@@ -119,6 +119,7 @@ struct CaptureCommands: View {
         Button("Capture Window…") { AppController.shared.captureWindow() }
         Button("Repeat Last Area") { AppController.shared.repeatCapture() }
         Button("Capture Area after 5 seconds") { AppController.shared.captureAfterDelay() }
+        Button("Record GIF…") { GIFRecordingController.shared.begin() }
         Button("Scrolling Capture…") { ScrollingCaptureController.shared.begin() }
         Divider()
         Button("Import Image…") { AppController.shared.importImage() }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-16T20:18:28.271857+00:00",
+  "generatedAt": "2026-10-16T21:11:53.170186+00:00",
   "title": "Design System: pressf4",
   "extensions": {
     "platform": {
@@ -49,7 +49,14 @@
         "purpose": "Move the HUD between screen corners."
       }
     ],
-    "breakpoints": []
+    "breakpoints": [],
+    "nativeInteractions": {
+      "gif-recording": {
+        "source": "Sources/Views/GIFRecording.swift",
+        "description": "Record GIF extends the native utility-panel pattern without changing the editor layout. The floating panel uses a fixed view width (440 points), padding (20 points), and vertical spacing (16 points). Its preview/status surface uses `underPageBackgroundColor`, height (220 points), and rounded corners (6 points). The animated image scales proportionally inside the preview; its source pixel dimensions do not determine the panel size.\n\nThe interaction progresses through a three-second countdown, starting, recording, encoding, and ready or failed states. Countdown uses rounded medium numerals (56 points); elapsed recording time uses medium monospaced numerals (28 points) and a determinate progress bar. Recording alone marks the headline and record symbol red. Starting and encoding use native indeterminate progress. Secondary header metadata shows 10 FPS and a maximum dimension of 800 pixels; recording stops automatically after 15 seconds.\n\nCancel remains available during preparation, recording, and encoding. Recording exposes a prominent Stop recording action. Ready displays the animated preview, file information, Copy GIF, and prominent Save GIF; feedback stays in the message area. Ready and failed states use Close. Failure shows a secondary warning symbol and the error message. Closing cancels pending work and discards the temporary recording. GIF output is copied or saved locally; this panel does not add GIFs to the capture library. These interaction details are source-inspected; they do not claim visual verification of the GIF panel.",
+        "verification": "Source-inspected; final animated-preview visual validation is not asserted by this document."
+      }
+    }
   },
   "components": [
     {
@@ -63,7 +70,7 @@
   ],
   "narrative": {
     "northStar": "The Native Screenshot Workbench",
-    "overview": "This is a descriptive name for the existing implementation, not a newly chosen brand identity. pressf4 uses compact SwiftUI controls and AppKit windows to keep capture history, image editing, and export close together. The image occupies the main workspace; controls use familiar macOS typography, SF Symbols, system surfaces, and the user's accent color.\n\nThis record covers the implemented local screenshot interface. It derives from `Sources/Views/EditorView.swift`, `MainWindow.swift`, `PresentationEditor.swift`, `CaptureOptions.swift`, `PinnedCapture.swift`, `ScrollingCapture.swift`, and `ThumbnailHUD.swift`. The editor was visually inspected in `.impeccable/review/mac-editor.png`; the renderer artifact `.impeccable/review/shadow-render.png` was also inspected. Other dialogs and floating panels are documented from source, not claimed as visually verified. No PRODUCT.md or previous DESIGN.md existed. Measurements below are native layout points unless explicitly identified as output-image pixels; frontmatter uses portable CSS pixel notation for those layout measurements.",
+    "overview": "This is a descriptive name for the existing implementation, not a newly chosen brand identity. pressf4 uses compact SwiftUI controls and AppKit windows to keep capture history, image editing, and export close together. The image occupies the main workspace; controls use familiar macOS typography, SF Symbols, system surfaces, and the user's accent color.\n\nThis record covers the implemented local screenshot interface. It derives from `Sources/Views/EditorView.swift`, `MainWindow.swift`, `PresentationEditor.swift`, `CaptureOptions.swift`, `PinnedCapture.swift`, `ScrollingCapture.swift`, `ThumbnailHUD.swift`, and `GIFRecording.swift`. The editor was visually inspected in `.impeccable/review/mac-editor.png`; the renderer artifact `.impeccable/review/shadow-render.png` was also inspected. Other dialogs and floating panels are documented from source, not claimed as visually verified. No PRODUCT.md or previous DESIGN.md existed. Measurements below are native layout points unless explicitly identified as output-image pixels; frontmatter uses portable CSS pixel notation for those layout measurements.",
     "keyCharacteristics": [
       "Native macOS controls and appearance-aware surfaces.",
       "Compact, separated action, tool, and annotation-control rows.",

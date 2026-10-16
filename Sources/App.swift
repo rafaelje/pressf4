@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addMenuItem(menu, title: "Capture Window…", action: #selector(AppController.menuCaptureWindow))
         addMenuItem(menu, title: "Repeat Last Area", action: #selector(AppController.menuRepeatCapture))
         addMenuItem(menu, title: "Capture Area after 5 seconds", action: #selector(AppController.menuDelayedCapture))
+        addMenuItem(menu, title: "Record GIF…", action: #selector(AppController.menuRecordGIF))
         addMenuItem(menu, title: "Scrolling Capture…", action: #selector(AppController.menuScrollingCapture))
         addMenuItem(menu, title: "Import Image…", action: #selector(AppController.menuImportImage))
         addMenuItem(menu, title: "Capture Options…", action: #selector(AppController.menuCaptureOptions))
@@ -312,6 +313,7 @@ final class AppController: NSObject {
     }
 
     // MARK: - Menu selectors
+    @objc func menuRecordGIF() { GIFRecordingController.shared.begin() }
     @objc func menuCaptureOptions() { showCaptureOptions() }
     @objc func menuCaptureScreen() { captureScreen() }
     @objc func menuCaptureWindow() { captureWindow() }
